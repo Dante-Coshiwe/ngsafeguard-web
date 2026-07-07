@@ -5229,30 +5229,260 @@ var capacitorLocalNotifications = (function (exports, core) {
 
 })({}, capacitorExports);
 </script>
-<style id="web-desktop-frame">
-/* Desktop presentation for the web build — injected into <head> by build.mjs.
-   Phones (<600px wide) are completely unaffected: they get the same
-   full-screen layout as the Android app.
-   On desktop the app renders as a normal web app: a fluid centred content
-   column using the full window height (no phone frame). All grids in the app
-   use fluid fr units, so they adapt to the extra width.
-   Pure CSS — no app logic or markup changes. */
-@media (min-width: 600px) {
+<style id="web-shell">
+/* ============================================================================
+   Web shell (web build only — injected into <head> by build.mjs).
+   Phones (<600px) keep the exact app layout. Tablets get a centred column.
+   Desktop (≥1000px) gets proper PC chrome:
+     • branded top bar with the Android download button (#web-topbar markup
+       is injected by build.mjs; hidden below 1000px)
+     • the bottom tab bar becomes a left navigation rail (body.rail-on is
+       kept in sync by web-shell.js watching the app's own show/hide logic)
+     • card lists flow into responsive grid columns
+     • hover states, pointer cursors, thin scrollbars
+   Pure presentation — zero app-logic changes.
+   ========================================================================== */
+
+/* --- Android install banner (small screens; created by web-shell.js) --- */
+#web-apk-banner {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: calc(var(--safe-top, 0px) + 10px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #16261F;
+    color: #fff;
+    padding: 10px 14px;
+    border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    font-size: 13px;
+}
+
+#web-apk-banner a {
+    color: #F2B34C;
+    font-weight: 700;
+    text-decoration: none;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+#web-apk-banner button {
+    background: none;
+    border: 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    padding: 2px 4px;
+    cursor: pointer;
+}
+
+/* --- Web top bar: desktop only --- */
+#web-topbar {
+    display: none;
+}
+
+/* --- Tablet: centred column --- */
+@media (min-width: 600px) and (max-width: 999px) {
     #app {
-        max-width: 860px;
-        /* faint column edges so the layout reads as intentional on wide screens */
+        max-width: 720px;
         box-shadow: 1px 0 0 rgba(27, 67, 50, 0.10), -1px 0 0 rgba(27, 67, 50, 0.10);
     }
 
     .app-background {
-        /* barely-tinted page margins so the content column stands out */
         background: #F3F3EF;
+    }
+}
+
+/* --- Desktop chrome --- */
+@media (min-width: 1000px) {
+    #web-apk-banner {
+        display: none;
+    }
+
+    body {
+        display: flex;
+        flex-direction: column;
+        height: 100dvh;
+        background: #F3F3EF;
+    }
+
+    .app-background {
+        background: #F3F3EF;
+    }
+
+    #web-topbar {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        flex: 0 0 auto;
+        height: 54px;
+        padding: 0 22px;
+        background: #16261F;
+        color: #fff;
+        z-index: 50;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 6px 24px -18px rgba(0, 0, 0, 0.6);
+    }
+
+    #web-topbar .wt-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        font-size: 16px;
+        letter-spacing: 0.01em;
+    }
+
+    #web-topbar .wt-brand svg {
+        width: 22px;
+        height: 22px;
+    }
+
+    #web-topbar .wt-tag {
+        font-size: 12.5px;
+        color: rgba(255, 255, 255, 0.55);
+    }
+
+    #web-topbar .wt-apk {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: #C9821A;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        padding: 8px 14px;
+        border-radius: 10px;
+        text-decoration: none;
+        transition: filter 0.15s ease;
+    }
+
+    #web-topbar .wt-apk:hover {
+        filter: brightness(1.1);
+    }
+
+    #web-topbar .wt-apk svg {
+        width: 15px;
+        height: 15px;
+    }
+
+    #app {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        width: min(1200px, 100%);
+        max-width: none;
+        margin: 0 auto;
+        box-shadow: 1px 0 0 rgba(27, 67, 50, 0.12), -1px 0 0 rgba(27, 67, 50, 0.12);
+    }
+
+    /* The app's bottom tab bar becomes a left navigation rail whenever the
+       app shows it (body.rail-on ⇄ tabbar visibility, via web-shell.js). */
+    body.rail-on .tabbar {
+        left: 0;
+        right: auto;
+        top: 0;
+        bottom: 0;
+        width: 96px;
+        padding: 14px 12px;
+    }
+
+    body.rail-on .tabbar-inner {
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 8px;
+        padding: 12px 7px;
+        border-radius: 20px;
+    }
+
+    body.rail-on .tab {
+        flex: 0 0 auto;
+        width: 100%;
+        padding: 12px 0 10px;
+    }
+
+    body.rail-on .tab span {
+        font-size: 10.5px;
+    }
+
+    body.rail-on .tab-fab {
+        margin: 8px 0;
+    }
+
+    body.rail-on .screen {
+        left: 96px;
+    }
+
+    /* Card lists flow into responsive columns */
+    #market-listings,
+    #guest-listings,
+    #home-animal-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 14px;
+        align-items: start;
+    }
+
+    #market-listings>*,
+    #guest-listings>*,
+    #home-animal-list>* {
+        margin-bottom: 0;
+    }
+
+    #market-listings .empty,
+    #guest-listings .empty,
+    #home-animal-list .empty {
+        grid-column: 1 / -1;
+    }
+
+    .market-card {
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .market-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 28px -12px rgba(22, 32, 28, 0.28);
+    }
+
+    /* Desktop niceties */
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(27, 67, 50, 0.35) transparent;
+    }
+
+    *::-webkit-scrollbar {
+        width: 9px;
+        height: 9px;
+    }
+
+    *::-webkit-scrollbar-thumb {
+        background: rgba(27, 67, 50, 0.28);
+        border-radius: 8px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+    }
+
+    *::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    button,
+    .chip,
+    [onclick] {
+        cursor: pointer;
     }
 }
 </style>
 </head>
 
 <body>
+    <header id="web-topbar">
+        <div class="wt-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#7BC496" d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg><span>NG Safeguard</span></div>
+        <div class="wt-tag">Livestock identity &amp; traceability</div>
+        <a class="wt-apk" href="https://github.com/Dante-Coshiwe/ngsafeguard-web/releases/latest" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Download for Android</a>
+    </header>
     <div class="app-background"></div>
     <div class="grain"></div>
     <div id="app">
@@ -16229,6 +16459,44 @@ var capacitorLocalNotifications = (function (exports, core) {
 
         console.log('NG Safeguard loaded — all fixes applied ✓');
     </script>
+<script>
+/* Web shell (web build only — injected before </body> by build.mjs).
+   1. Mirrors the app's own tab-bar visibility onto body.rail-on so the
+      desktop CSS can render the tab bar as a left navigation rail exactly
+      when the app itself would show it. No app logic is changed.
+   2. Shows a dismissible "get the Android app" banner to Android browser
+      visitors (never inside the APK — this script only exists in the web
+      build). __APK_RELEASES_URL__ is substituted by build.mjs. */
+(function () {
+    var APK_URL = 'https://github.com/Dante-Coshiwe/ngsafeguard-web/releases/latest';
+
+    var tabbar = document.getElementById('tabbar');
+    function syncRail() {
+        document.body.classList.toggle('rail-on', !!tabbar && tabbar.style.display !== 'none');
+    }
+    if (tabbar) {
+        new MutationObserver(syncRail).observe(tabbar, { attributes: true, attributeFilter: ['style'] });
+    }
+    syncRail();
+
+    var isAndroidBrowser = /Android/i.test(navigator.userAgent || '');
+    var dismissed = false;
+    try { dismissed = localStorage.getItem('web_apk_banner_dismissed') === '1'; } catch (e) { /* storage blocked */ }
+    if (isAndroidBrowser && !dismissed) {
+        var banner = document.createElement('div');
+        banner.id = 'web-apk-banner';
+        banner.innerHTML =
+            '<span>Prefer the app? NG Safeguard for Android.</span>' +
+            '<a href="' + APK_URL + '" target="_blank" rel="noopener">Download</a>' +
+            '<button type="button" aria-label="Dismiss">✕</button>';
+        banner.querySelector('button').onclick = function () {
+            banner.remove();
+            try { localStorage.setItem('web_apk_banner_dismissed', '1'); } catch (e) { /* ignore */ }
+        };
+        document.body.appendChild(banner);
+    }
+})();
+</script>
 </body>
 
 </html>
