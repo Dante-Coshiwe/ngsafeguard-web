@@ -2151,6 +2151,129 @@
             cursor: pointer
         }
 
+        /* REFRESH BAR — thin indeterminate sweep shown while data re-hydrates
+           (cold start + every time the app returns to the foreground). */
+        .refresh-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            z-index: 80;
+            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .25s ease
+        }
+
+        .refresh-bar.show {
+            opacity: 1
+        }
+
+        .refresh-bar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 42%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, transparent, var(--verify-light, #2E8B57), transparent);
+            animation: refresh-slide 1.05s ease-in-out infinite
+        }
+
+        @keyframes refresh-slide {
+            0% { left: -42% }
+            100% { left: 100% }
+        }
+
+        /* IMPORT OVERLAY — full-screen while a bulk import runs. A little herd
+           marches in and a progress bar fills, so a long file feels alive rather
+           than frozen behind a button spinner. */
+        .import-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 90;
+            background: linear-gradient(160deg, var(--verify) 0%, #0E2419 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .3s ease;
+            padding: 0 32px;
+            text-align: center
+        }
+
+        .import-overlay.show {
+            opacity: 1;
+            pointer-events: auto
+        }
+
+        .io-herd {
+            display: flex;
+            gap: 7px;
+            margin-bottom: 26px;
+            font-size: 33px;
+            line-height: 1
+        }
+
+        .io-herd span {
+            display: inline-block;
+            animation: io-bounce 1s ease-in-out infinite;
+            filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.25))
+        }
+
+        .io-herd span:nth-child(2) { animation-delay: .12s }
+        .io-herd span:nth-child(3) { animation-delay: .24s }
+        .io-herd span:nth-child(4) { animation-delay: .36s }
+        .io-herd span:nth-child(5) { animation-delay: .48s }
+
+        @keyframes io-bounce {
+            0%, 100% { transform: translateY(0) }
+            28% { transform: translateY(-15px) }
+        }
+
+        .import-overlay h3 {
+            font-family: var(--font-display);
+            font-size: 20px;
+            font-weight: 600;
+            margin: 0 0 6px
+        }
+
+        .import-overlay p {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0 0 22px;
+            line-height: 1.5;
+            max-width: 300px
+        }
+
+        .io-bar {
+            width: min(280px, 78vw);
+            height: 8px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.16);
+            overflow: hidden
+        }
+
+        .io-bar-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 20px;
+            background: linear-gradient(90deg, #7BC496, #B9E5C9);
+            transition: width .3s ease
+        }
+
+        .io-count {
+            margin-top: 13px;
+            font-size: 12.5px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.85);
+            letter-spacing: .02em
+        }
+
         /* PUBLIC FOUND OVERLAY */
         .found-hero {
             background: linear-gradient(155deg, #1A4B8C, #0A2147);
@@ -6177,6 +6300,18 @@ var capacitorLocalNotifications = (function (exports, core) {
             <div class="cancel" onclick="cancelScan()">Cancel</div>
         </div>
 
+        <!-- ===== REFRESH BAR (data hydration) ===== -->
+        <div class="refresh-bar" id="refreshBar" aria-hidden="true"></div>
+
+        <!-- ===== BULK IMPORT OVERLAY ===== -->
+        <div class="import-overlay" id="importOverlay" aria-hidden="true">
+            <div class="io-herd" aria-hidden="true"><span>🐄</span><span>🐑</span><span>🐐</span><span>🐎</span><span>🐕</span></div>
+            <h3 id="io-title">Bringing your herd in…</h3>
+            <p id="io-sub">Large files can take a moment — please keep the app open.</p>
+            <div class="io-bar"><div class="io-bar-fill" id="io-bar-fill"></div></div>
+            <div class="io-count" id="io-count">0 of 0</div>
+        </div>
+
         <!-- ===== ANIMAL PROFILE ===== -->
         <div class="screen hidden" id="screen-animal">
             <div class="topbar">
@@ -9302,7 +9437,7 @@ var capacitorLocalNotifications = (function (exports, core) {
         let _savingVetAppt = false;
         let _sendingTransfer = false;
         let _foundGpsCoords = null;
-        const APP_VERSION = '1.4.1';//Keep updating after each patch and release to the app store. This is used to check if the user has the latest version of the app installed.
+        const APP_VERSION = '1.4.2';//Keep updating after each patch and release to the app store. This is used to check if the user has the latest version of the app installed.
 
         /* ==============================================================
            DATA PERSISTENCE
@@ -14156,6 +14291,35 @@ var capacitorLocalNotifications = (function (exports, core) {
         }
         window.impSetDup = impSetDup;
 
+        // Full-screen import progress overlay (the marching herd + progress bar).
+        function showImportOverlay(total) {
+            const o = document.getElementById('importOverlay');
+            if (!o) return;
+            const title = document.getElementById('io-title');
+            if (title) title.textContent = 'Bringing your herd in…';
+            const sub = document.getElementById('io-sub');
+            if (sub) sub.textContent = total > 40
+                ? 'This can take a moment for large files — please keep the app open.'
+                : 'Just a moment — please keep the app open.';
+            updateImportOverlay(0, total);
+            o.classList.add('show');
+            o.setAttribute('aria-hidden', 'false');
+        }
+        function updateImportOverlay(done, total) {
+            const fill = document.getElementById('io-bar-fill');
+            const count = document.getElementById('io-count');
+            const pct = total ? Math.round((done / total) * 100) : 0;
+            if (fill) fill.style.width = pct + '%';
+            if (count) count.textContent = done >= total && total
+                ? 'Finishing up…'
+                : `${done} of ${total} animal${total !== 1 ? 's' : ''}`;
+        }
+        function hideImportOverlay() {
+            const o = document.getElementById('importOverlay');
+            if (o) { o.classList.remove('show'); o.setAttribute('aria-hidden', 'true'); }
+        }
+        window.hideImportOverlay = hideImportOverlay;
+
         async function commitImport() {
             const st = importState;
             if (!st) return;
@@ -14175,10 +14339,14 @@ var capacitorLocalNotifications = (function (exports, core) {
 
             const btn = document.getElementById('import-commit-btn');
             if (btn) { btn.disabled = true; btn.classList.add('btn-loading'); }
+            showImportOverlay(total);
             let done = 0, created = 0, updated = 0, failed = 0, queued = 0;
             const needReview = [];
-            const tick = () => { if (btn) btn.textContent = `Importing ${done}/${total}…`; };
+            // Update the overlay progress; let the browser paint between rows so the
+            // bar and bouncing herd actually animate during a big import.
+            const tick = () => { updateImportOverlay(done, total); };
             tick();
+            await new Promise(r => requestAnimationFrame(() => r()));
 
             for (const f of toCreate) {
                 try {
@@ -14188,6 +14356,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                     if (f._speciesReview) needReview.push(localAnimal.id);
                 } catch (e) { console.warn('Import row failed:', e); failed++; }
                 done++; tick();
+                if (done % 5 === 0) await new Promise(r => requestAnimationFrame(r));
             }
             for (const { f, target } of toUpdate) {
                 try {
@@ -14205,6 +14374,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                     updated++;
                 } catch (e) { console.warn('Import update failed:', e); failed++; }
                 done++; tick();
+                if (done % 5 === 0) await new Promise(r => requestAnimationFrame(r));
             }
 
             await saveAllData();
@@ -14216,6 +14386,11 @@ var capacitorLocalNotifications = (function (exports, core) {
             } catch (_) { }
 
             st._summary = { created, updated, skipped, failed, queued, needReview, fileName: st.fileName };
+            // Let the finished bar (100% / "Finishing up…") land for a beat before we
+            // swap to the summary screen, then tear the overlay down.
+            updateImportOverlay(total, total);
+            await new Promise(r => setTimeout(r, 450));
+            hideImportOverlay();
             go('import-summary');
         }
         window.commitImport = commitImport;
@@ -17867,11 +18042,17 @@ var capacitorLocalNotifications = (function (exports, core) {
         // so returning to the app (foreground, tab focus) always refreshes the data
         // without a manual reload. Fully guarded: a flaky network never signs the user
         // out and never throws to the caller.
+        // Thin top-of-app loading bar shown while data re-hydrates, so a refresh
+        // (cold start or foregrounding) gives visible feedback instead of a silent wait.
+        function showRefreshBar() { document.getElementById('refreshBar')?.classList.add('show'); }
+        function hideRefreshBar() { document.getElementById('refreshBar')?.classList.remove('show'); }
+
         let _hydrating = false;
         async function hydrateFromServer(opts = {}) {
             if (_hydrating) return;
             if (isGuest || !currentUser.id) return;
             _hydrating = true;
+            showRefreshBar();
             try {
                 if (currentUser.refreshToken) {
                     try { await sbRefreshToken(); } catch (e) { console.warn('Token refresh:', e); }
@@ -17898,6 +18079,9 @@ var capacitorLocalNotifications = (function (exports, core) {
                 console.warn('Server hydration failed (staying signed in):', e);
             } finally {
                 _hydrating = false;
+                // Keep the bar visible just long enough to read as a refresh, even when
+                // the load returns almost instantly.
+                setTimeout(hideRefreshBar, 350);
                 try { updateBadges(); } catch (e) { }
                 refreshCurrentScreen();
             }
@@ -18348,6 +18532,11 @@ var capacitorLocalNotifications = (function (exports, core) {
 
             const overlay = document.getElementById('scanOverlay');
             if (overlay?.classList.contains('show')) { cancelScan(); return; }
+
+            // A running bulk import owns the screen — swallow Back so it can't yank the
+            // user out mid-write.
+            const importOv = document.getElementById('importOverlay');
+            if (importOv?.classList.contains('show')) return;
 
             const modal = document.getElementById('manual-tag-modal');
             if (modal) { modal.remove(); return; }
