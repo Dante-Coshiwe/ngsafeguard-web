@@ -9302,7 +9302,7 @@ var capacitorLocalNotifications = (function (exports, core) {
         let _savingVetAppt = false;
         let _sendingTransfer = false;
         let _foundGpsCoords = null;
-        const APP_VERSION = '1.4.0';//Keep updating after each patch and release to the app store. This is used to check if the user has the latest version of the app installed.
+        const APP_VERSION = '1.4.1';//Keep updating after each patch and release to the app store. This is used to check if the user has the latest version of the app installed.
 
         /* ==============================================================
            DATA PERSISTENCE
@@ -10079,7 +10079,9 @@ var capacitorLocalNotifications = (function (exports, core) {
             if (!currentUser.id) return;
             try {
                 const data = await sbFetch(
-                    `animals?owner_id=eq.${currentUser.id}&is_deleted=eq.false&select=${ANIMAL_SELECT}`
+                    // Explicit high limit + order so a large herd (100s of animals) is never
+                    // silently truncated by the server's default row cap. Newest first.
+                    `animals?owner_id=eq.${currentUser.id}&is_deleted=eq.false&select=${ANIMAL_SELECT}&order=created_at.desc&limit=5000`
                 );
                 animals = (data || []).map(mapAnimalRow);
 
@@ -14430,6 +14432,19 @@ var capacitorLocalNotifications = (function (exports, core) {
                 </div>`;
         }
 
+        // How many animal cards the Home list renders before showing a "Show more"
+        // button. A large herd (100s of animals) rendered all at once janks / blanks
+        // the Android WebView, so we page through it 50 at a time. Reset on each
+        // Home visit (see renderHome) and grown by showMoreHomeAnimals().
+        const HOME_PAGE_SIZE = 50;
+        let homeListLimit = HOME_PAGE_SIZE;
+
+        function showMoreHomeAnimals() {
+            homeListLimit += HOME_PAGE_SIZE;
+            renderHomeAnimalList();
+        }
+        window.showMoreHomeAnimals = showMoreHomeAnimals;
+
         // Render (and, above 5 animals, filter) the Home animal list in place.
         // Reuses the same rankResults matcher as the vet directory / marketplace.
         function renderHomeAnimalList() {
@@ -14457,7 +14472,17 @@ var capacitorLocalNotifications = (function (exports, core) {
                 list.innerHTML = `<div class="empty" style="padding:26px 20px;"><div class="et">No matches</div><div class="es">No animals match “${esc(q)}”. Check the spelling or clear the search.</div></div>`;
                 return;
             }
-            list.innerHTML = shown.map(animalRowCardHtml).join('');
+            // Page long lists: render up to homeListLimit cards, with a button to reveal
+            // the next batch. A search narrows the list, so paging still applies to results.
+            const total = shown.length;
+            const page = shown.slice(0, homeListLimit);
+            let html = page.map(animalRowCardHtml).join('');
+            if (total > page.length) {
+                const remaining = total - page.length;
+                const next = Math.min(HOME_PAGE_SIZE, remaining);
+                html += `<button class="btn btn-ghost" style="margin-top:8px;" onclick="showMoreHomeAnimals()">Show ${next} more · ${remaining} not shown</button>`;
+            }
+            list.innerHTML = html;
         }
         window.renderHomeAnimalList = renderHomeAnimalList;
 
@@ -14509,6 +14534,7 @@ var capacitorLocalNotifications = (function (exports, core) {
             // so a one-pet owner's Home stays uncluttered.
             const homeSearch = document.getElementById('home-search');
             if (homeSearch) homeSearch.style.display = animals.length > 5 ? 'block' : 'none';
+            homeListLimit = HOME_PAGE_SIZE; // start each Home visit at the first page
             renderHomeAnimalList();
 
             const homeLog = document.getElementById('home-scan-log');
@@ -17815,35 +17841,93 @@ var capacitorLocalNotifications = (function (exports, core) {
             // sbRefreshToken only signs out on a genuinely rejected refresh token.
             currentUser = { ...currentUser, ...session };
             isGuest = false;
+
+            // Show cached data immediately so the first paint is never empty while the
+            // network load runs. loadAllData restores the currentUser cache too, so
+            // re-apply the live session fields (tokens/id) right after so a stale cache
+            // can't clobber the token we just validated.
+            try {
+                await loadAllData();
+                currentUser = { ...currentUser, ...session };
+            } catch (e) { console.warn('Local cache load failed:', e); }
+
             seedVetData();
             go('home');
 
-            // Background hydration — fire and forget, fully guarded.
-            (async () => {
-                try {
-                    if (currentUser.refreshToken) await sbRefreshToken();
-                    // If the refresh definitively rejected the session, sbRefreshToken
-                    // already signed the user out; don't keep loading in that case.
-                    if (isGuest || !currentUser.id) return;
-                    await drainSyncQueue().catch(e => console.warn('Drain sync queue error:', e));
-                    await Promise.all([
-                        loadAnimalsFromSupabase(),
-                        loadCalendarFromSupabase(),
-                        loadNotificationsFromSupabase(),
-                        loadVetDataFromSupabase(),
-                        loadTransferHistoryFromSupabase(),
-                        loadIncomingTransfers(),
-                        loadConversationsFromSupabase(),
-                    ].map(p => p.catch(e => console.warn('Load error:', e))));
-                    rescheduleAllReminders();
-                    checkUpcomingReminders();
-                } catch (e) {
-                    console.warn('Background session hydration failed (staying signed in):', e);
-                }
-            })();
+            // Background hydration — fire and forget, but re-render the visible screen
+            // when it finishes so a cold start always ends on fresh data instead of the
+            // empty lists rendered before the network load completed.
+            hydrateFromServer({ initial: true });
 
             return true;
         }
+
+        // Pull every list back from Supabase, then repaint whatever screen is on top.
+        // Shared by the initial cold-start load and the app-resume/visibility handlers
+        // so returning to the app (foreground, tab focus) always refreshes the data
+        // without a manual reload. Fully guarded: a flaky network never signs the user
+        // out and never throws to the caller.
+        let _hydrating = false;
+        async function hydrateFromServer(opts = {}) {
+            if (_hydrating) return;
+            if (isGuest || !currentUser.id) return;
+            _hydrating = true;
+            try {
+                if (currentUser.refreshToken) {
+                    try { await sbRefreshToken(); } catch (e) { console.warn('Token refresh:', e); }
+                }
+                // If the refresh definitively rejected the session, sbRefreshToken
+                // already signed the user out; don't keep loading in that case.
+                if (isGuest || !currentUser.id) return;
+                await drainSyncQueue().catch(e => console.warn('Drain sync queue error:', e));
+                await Promise.all([
+                    loadAnimalsFromSupabase(),
+                    loadCalendarFromSupabase(),
+                    loadNotificationsFromSupabase(),
+                    loadVetDataFromSupabase(),
+                    loadTransferHistoryFromSupabase(),
+                    loadIncomingTransfers(),
+                    loadConversationsFromSupabase(),
+                ].map(p => p.catch(e => console.warn('Load error:', e))));
+                rescheduleAllReminders();
+                checkUpcomingReminders();
+                // Persist the freshly loaded lists so the next cold start paints real
+                // data instantly instead of an empty screen while the network catches up.
+                saveAllData().catch(e => console.warn('Cache write failed:', e));
+            } catch (e) {
+                console.warn('Server hydration failed (staying signed in):', e);
+            } finally {
+                _hydrating = false;
+                try { updateBadges(); } catch (e) { }
+                refreshCurrentScreen();
+            }
+        }
+        window.hydrateFromServer = hydrateFromServer;
+
+        // Re-run the render for whichever screen is currently visible. Used after a
+        // background hydration so freshly loaded data actually appears without the user
+        // having to navigate away and back.
+        function refreshCurrentScreen() {
+            try {
+                const active = document.querySelector('.screen:not(.hidden)');
+                if (!active) return;
+                const sid = active.id.replace('screen-', '');
+                const R = {
+                    home: renderHome,
+                    notifications: renderNotifications,
+                    messages: renderMessages,
+                    account: renderAccount,
+                    calendar: renderCalendar,
+                    vaccreminders: renderVaccReminders,
+                    transferhistory: renderTransferHistory,
+                    herds: renderHerds,
+                    activity: renderActivityLog,
+                };
+                const fn = R[sid];
+                if (typeof fn === 'function') fn();
+            } catch (e) { console.warn('refreshCurrentScreen failed:', e); }
+        }
+        window.refreshCurrentScreen = refreshCurrentScreen;
 
         /* ==============================================================
            RENDER AUCTION VERIFY
@@ -18139,6 +18223,23 @@ var capacitorLocalNotifications = (function (exports, core) {
                 seedVetData();
                 go('auth');
             }
+
+            // Refresh data every time the app returns to the foreground. On Android the
+            // WebView is often kept alive across a close/reopen, so DOMContentLoaded does
+            // NOT fire again on resume — without this the user would see whatever was on
+            // screen when they left until they manually reloaded. Both signals are wired
+            // up: Capacitor's native appStateChange (reliable on Android) and the DOM
+            // visibilitychange (covers the web build and tab focus). hydrateFromServer is
+            // self-guarding (no-op for guests/logged-out, and re-entrancy protected).
+            try {
+                Capacitor.Plugins.App?.addListener?.('appStateChange', ({ isActive }) => {
+                    if (isActive) hydrateFromServer({ resume: true });
+                });
+            } catch (e) { console.warn('appStateChange listener:', e); }
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') hydrateFromServer({ resume: true });
+            });
         });
 
         function selectRole(role, el) {
