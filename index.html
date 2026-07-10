@@ -5890,11 +5890,12 @@ var capacitorLocalNotifications = (function (exports, core) {
         <!-- ===== AUTH ===== -->
         <div class="screen" id="screen-auth">
             <div class="auth-wrap">
-                <div class="auth-logo"><svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-                        <path d="M12 2L4 5v6c0 5 3.4 8.7 8 9 4.6-.3 8-4 8-9V5l-8-3z" stroke="#F4F7F5" stroke-width="1.6"
-                            stroke-linejoin="round" />
-                        <path d="M9 12l2 2 4-4" stroke="#F4F7F5" stroke-width="1.6" stroke-linecap="round"
-                            stroke-linejoin="round" />
+                <div class="auth-logo"><svg width="34" height="34" viewBox="0 0 1024 1024" fill="#F4F7F5" aria-hidden="true">
+                        <path d="M512 520 C596 520 664 566 690 628 C712 680 706 724 668 760 C642 784 616 792 592 792 C566 792 548 780 512 780 C476 780 458 792 432 792 C408 792 382 784 356 760 C318 724 312 680 334 628 C360 566 428 520 512 520 Z" />
+                        <ellipse cx="350" cy="436" rx="60" ry="84" transform="rotate(-24 350 436)" />
+                        <ellipse cx="452" cy="356" rx="64" ry="96" transform="rotate(-8 452 356)" />
+                        <ellipse cx="572" cy="356" rx="64" ry="96" transform="rotate(8 572 356)" />
+                        <ellipse cx="674" cy="436" rx="60" ry="84" transform="rotate(24 674 436)" />
                     </svg></div>
                 <h1>NG&nbsp;Safeguard</h1>
                 <p class="lede">Verified identity, lineage and ownership records for every animal you're responsible
@@ -9132,8 +9133,22 @@ var capacitorLocalNotifications = (function (exports, core) {
                     headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ refresh_token: currentUser.refreshToken })
                 });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error_description || 'Token refresh failed');
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    // Only a genuinely rejected refresh token (invalid / expired /
+                    // revoked) should end the session. A network blip or a 5xx must
+                    // NOT log the user out — they stay signed in and we retry later.
+                    const reason = (data.error || data.error_description || data.msg || '').toString();
+                    const definitivelyInvalid = res.status === 400 || res.status === 401 ||
+                        /invalid|revoked|expired|not\s*found/i.test(reason);
+                    if (definitivelyInvalid) {
+                        console.warn('Refresh token rejected — signing out:', res.status, reason);
+                        await signOut();
+                    } else {
+                        console.warn('Token refresh transient failure (staying signed in):', res.status, reason);
+                    }
+                    return null;
+                }
                 currentUser.accessToken = data.access_token;
                 currentUser.refreshToken = data.refresh_token;
                 await saveData('auth_session', {
@@ -9149,8 +9164,9 @@ var capacitorLocalNotifications = (function (exports, core) {
                 });
                 return currentUser.accessToken;
             } catch (e) {
-                console.error('Token refresh error:', e);
-                await signOut();
+                // Network error (offline, DNS, timeout) — keep the user signed in.
+                // sbFetch will refresh again on the next 401 once connectivity returns.
+                console.warn('Token refresh network error (staying signed in):', e);
                 return null;
             } finally {
                 isRefreshingToken = false;
@@ -17780,40 +17796,53 @@ var capacitorLocalNotifications = (function (exports, core) {
         function openDeviceSettings() { toast('Opening device settings…'); }
 
         async function checkStoredSession() {
+            let session;
             try {
                 const { value } = await Capacitor.Plugins.Preferences.get({ key: 'auth_session' });
                 if (!value) return false;
-                const session = JSON.parse(value);
-                if (!session.accessToken || !session.id) return false;
-                currentUser = { ...currentUser, ...session };
-                isGuest = false;
-                if (currentUser.refreshToken) {
-                    const refreshed = await sbRefreshToken();
-                    if (!refreshed) {
-                        await signOut();
-                        return false;
-                    }
-                }
-                await drainSyncQueue().catch(e => console.warn('Drain sync queue error:', e));
-                // Independent reads — run in parallel so the home screen appears sooner.
-                await Promise.all([
-                    loadAnimalsFromSupabase(),
-                    loadCalendarFromSupabase(),
-                    loadNotificationsFromSupabase(),
-                    loadVetDataFromSupabase(),
-                    loadTransferHistoryFromSupabase(),
-                    loadIncomingTransfers(),
-                    loadConversationsFromSupabase(),
-                ].map(p => p.catch(e => console.warn('Load error:', e))));
-                rescheduleAllReminders();
-                checkUpcomingReminders();
-                seedVetData();
-                go('home');
-                return true;
+                session = JSON.parse(value);
             } catch (e) {
-                console.warn('Session restore failed:', e);
+                console.warn('Session read failed:', e);
                 return false;
             }
+            if (!session || !session.accessToken || !session.id) return false;
+
+            // We have a stored session — let the user straight in. The token
+            // refresh and data sync happen in the background and must NEVER bounce
+            // them back to the login screen: a flaky network or a slow load should
+            // not cost someone their session. sbFetch already refreshes the access
+            // token on the first 401, so entering with a stale token is safe, and
+            // sbRefreshToken only signs out on a genuinely rejected refresh token.
+            currentUser = { ...currentUser, ...session };
+            isGuest = false;
+            seedVetData();
+            go('home');
+
+            // Background hydration — fire and forget, fully guarded.
+            (async () => {
+                try {
+                    if (currentUser.refreshToken) await sbRefreshToken();
+                    // If the refresh definitively rejected the session, sbRefreshToken
+                    // already signed the user out; don't keep loading in that case.
+                    if (isGuest || !currentUser.id) return;
+                    await drainSyncQueue().catch(e => console.warn('Drain sync queue error:', e));
+                    await Promise.all([
+                        loadAnimalsFromSupabase(),
+                        loadCalendarFromSupabase(),
+                        loadNotificationsFromSupabase(),
+                        loadVetDataFromSupabase(),
+                        loadTransferHistoryFromSupabase(),
+                        loadIncomingTransfers(),
+                        loadConversationsFromSupabase(),
+                    ].map(p => p.catch(e => console.warn('Load error:', e))));
+                    rescheduleAllReminders();
+                    checkUpcomingReminders();
+                } catch (e) {
+                    console.warn('Background session hydration failed (staying signed in):', e);
+                }
+            })();
+
+            return true;
         }
 
         /* ==============================================================
