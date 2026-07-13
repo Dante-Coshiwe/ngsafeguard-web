@@ -9458,7 +9458,7 @@ var capacitorLocalNotifications = (function (exports, core) {
         let _savingVetAppt = false;
         let _sendingTransfer = false;
         let _foundGpsCoords = null;
-        const APP_VERSION = '1.4.4';//Keep updating after each patch and release to the app store. This is used to check if the user has the latest version of the app installed.
+        const APP_VERSION = '1.4.5';//Keep updating after each patch and release to the app store. This is used to check if the user has the latest version of the app installed.
 
         /* ==============================================================
            DATA PERSISTENCE
@@ -10172,10 +10172,23 @@ var capacitorLocalNotifications = (function (exports, core) {
                 ownershipType: mine ? mine.ownership_type : 'primary',
                 coOwned: !!coOwned,
                 coOwnerId: coRow ? coRow.owner_id : null,
-                // animals has no photo_url column — the cover photo lives in animal_photos
-                // (profile row), so resolve from there or it disappears on reload.
-                photoUrl: a.photo_url || a.face_photo_url || pickAnimalPhotoUrl(a.animal_photos) || null,
-                photos: { face: a.face_photo_registered, nose: a.nose_photo_registered, faceUrl: a.face_photo_url || pickAnimalPhotoUrl(a.animal_photos) || null, noseUrl: a.nose_photo_url || null },
+                // animals has NO photo-url columns (verified live) — every photo lives in
+                // the animal_photos embed. Rebuild ALL types from it on every load, or a
+                // captured photo disappears at the next refresh.
+                ...(() => {
+                    const embed = a.animal_photos || [];
+                    const pUrl = t => { const p = embed.find(x => x.photo_type === t); return (p && (p.public_url || p.thumbnail_url)) || null; };
+                    return {
+                        photoUrl: pUrl('profile') || pUrl('face') || pickAnimalPhotoUrl(embed) || null,
+                        photos: {
+                            face: !!(a.face_photo_registered || pUrl('face')),
+                            nose: !!(a.nose_photo_registered || pUrl('nose')),
+                            faceUrl: pUrl('face'), noseUrl: pUrl('nose'),
+                            profile: pUrl('profile'),
+                            left: pUrl('left_side'), right: pUrl('right_side'), body: pUrl('full_body')
+                        }
+                    };
+                })(),
                 farm: a.farm_name,
                 herd: a.herd_camp,
                 tagNo: a.tag_ear_no,
@@ -14661,10 +14674,10 @@ var capacitorLocalNotifications = (function (exports, core) {
         }
 
         // How many animal cards the Home list renders before showing a "Show more"
-        // button. A large herd (100s of animals) rendered all at once janks / blanks
-        // the Android WebView, so we page through it 50 at a time. Reset on each
-        // Home visit (see renderHome) and grown by showMoreHomeAnimals().
-        const HOME_PAGE_SIZE = 50;
+        // button. Kept SMALL (10) because each card carries a photo + SVGs — rendering
+        // a big herd in one go janks or blanks the WebView on low-end Android devices.
+        // Reset on each Home visit (see renderHome) and grown by showMoreHomeAnimals().
+        const HOME_PAGE_SIZE = 10;
         let homeListLimit = HOME_PAGE_SIZE;
 
         function showMoreHomeAnimals() {
@@ -14672,6 +14685,13 @@ var capacitorLocalNotifications = (function (exports, core) {
             renderHomeAnimalList();
         }
         window.showMoreHomeAnimals = showMoreHomeAnimals;
+
+        function collapseHomeAnimals() {
+            homeListLimit = HOME_PAGE_SIZE;
+            renderHomeAnimalList();
+            document.querySelector('#screen-home .scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        window.collapseHomeAnimals = collapseHomeAnimals;
 
         // Render (and, above 5 animals, filter) the Home animal list in place.
         // Reuses the same rankResults matcher as the vet directory / marketplace.
@@ -14705,10 +14725,17 @@ var capacitorLocalNotifications = (function (exports, core) {
             const total = shown.length;
             const page = shown.slice(0, homeListLimit);
             let html = page.map(animalRowCardHtml).join('');
-            if (total > page.length) {
+            // Pager footer: "Show more" plus a page-position counter so the user always
+            // knows how much of the herd is on screen.
+            if (total > HOME_PAGE_SIZE) {
                 const remaining = total - page.length;
                 const next = Math.min(HOME_PAGE_SIZE, remaining);
-                html += `<button class="btn btn-ghost" style="margin-top:8px;" onclick="showMoreHomeAnimals()">Show ${next} more · ${remaining} not shown</button>`;
+                const pageNo = Math.ceil(page.length / HOME_PAGE_SIZE);
+                const pageCount = Math.ceil(total / HOME_PAGE_SIZE);
+                html += `<div style="margin-top:8px;">
+                    ${remaining > 0 ? `<button class="btn btn-ghost" style="margin:0 0 6px;" onclick="showMoreHomeAnimals()">Show ${next} more</button>` : ''}
+                    <div style="text-align:center;font-size:11.5px;color:var(--ink-faint);font-weight:600;padding:2px 0 4px;">Showing ${page.length} of ${total} · page ${pageNo} of ${pageCount}${remaining === 0 ? ` · <span class="link" onclick="collapseHomeAnimals()">collapse</span>` : ''}</div>
+                </div>`;
             }
             list.innerHTML = html;
         }
@@ -16891,7 +16918,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                 await Capacitor.Plugins.Filesystem.writeFile({ path: fileName, data: dataUrl, directory: 'DATA' });
             } catch (fsErr) { console.warn('Filesystem write failed:', fsErr); }
 
-            if (currentUser.id && currentUser.accessToken) {
+            if (currentUser.id && currentUser.accessToken && isServerUuid(a.id)) {
                 try {
                     const base64 = dataUrl.split(',')[1];
                     const byteChars = atob(base64);
@@ -16914,32 +16941,40 @@ var capacitorLocalNotifications = (function (exports, core) {
                     );
                     if (uploadRes.ok) {
                         const publicUrl = `${STORAGE_PUBLIC_BASE}/storage/v1/object/public/animal-photos/${storagePath}`;
-                        const photoField = mode === 'profile' ? 'photo_url' : mode === 'face' ? 'face_photo_url' : 'nose_photo_url';
-                        await sbFetch(`animals?id=eq.${a.id}`, {
-                            method: 'PATCH',
-                            prefer: 'return=minimal',
-                            body: JSON.stringify({
-                                [photoField]: publicUrl,
-                                face_photo_registered: mode === 'face' ? true : a.photos?.face ? true : false,
-                                nose_photo_registered: mode === 'nose' ? true : a.photos?.nose ? true : false
-                            })
-                        }).catch(e => console.warn('Photo URL update:', e));
                         // Swap the bulky local dataUrl for the hosted URL everywhere it's
                         // displayed/stored — keeps the local cache small and survives reloads.
                         a.photos[mode] = publicUrl;
                         if (mode === 'profile') a.photoUrl = publicUrl;
                         if (mode === 'face') { a.photos.faceUrl = publicUrl; if (!a.photoUrl || a.photoUrl.startsWith('data:')) a.photoUrl = publicUrl; }
                         if (mode === 'nose') a.photos.noseUrl = publicUrl;
-                        // Keep the animal_photos 'profile' row in sync so the PUBLIC
-                        // marketplace (which reads animal_photos, not photo_url) shows the new
-                        // cover. Update-or-insert to avoid duplicate rows.
-                        if (mode === 'profile') {
-                            const photoRow = { public_url: publicUrl, photo_type: 'profile' };
-                            sbFetch(`animal_photos?animal_id=eq.${a.id}&photo_type=eq.profile`, { method: 'PATCH', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(photoRow) })
-                                .then(upd => { if (!upd || !upd.length) return sbFetch('animal_photos', { method: 'POST', prefer: 'return=minimal', body: JSON.stringify({ animal_id: a.id, ...photoRow }) }); })
-                                .catch(() => {});
+
+                        // Persist the photo record. VERIFIED LIVE (HTTP 400 probes): the
+                        // animals table has NO photo_url/face_photo_url/nose_photo_url
+                        // columns — the old PATCH failed on every save, which is why photos
+                        // vanished on refresh. The photo row lives in animal_photos (its
+                        // storage_path is NOT NULL — omitting it made the old insert fail
+                        // too); animals only carries the face/nose registered booleans.
+                        if (mode === 'face' || mode === 'nose') {
+                            await sbFetch(`animals?id=eq.${a.id}`, {
+                                method: 'PATCH',
+                                prefer: 'return=minimal',
+                                body: JSON.stringify(mode === 'face' ? { face_photo_registered: true } : { nose_photo_registered: true })
+                            }).catch(e => console.warn('Photo flag update:', e));
                         }
-                        console.log('Photo uploaded:', publicUrl);
+                        // DB photo_type enum: profile|face|nose|left_side|right_side|full_body.
+                        const photoType = { profile: 'profile', face: 'face', nose: 'nose', left: 'left_side', right: 'right_side', body: 'full_body' }[mode] || 'profile';
+                        const photoRow = { public_url: publicUrl, storage_path: storagePath, photo_type: photoType, uploaded_by: currentUser.id };
+                        try {
+                            const upd = await sbFetch(`animal_photos?animal_id=eq.${a.id}&photo_type=eq.${photoType}`,
+                                { method: 'PATCH', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(photoRow) });
+                            if (!upd || !upd.length) {
+                                await sbFetch('animal_photos', { method: 'POST', prefer: 'return=minimal', body: JSON.stringify({ animal_id: a.id, ...photoRow }) });
+                            }
+                            console.log('Photo persisted:', publicUrl);
+                        } catch (dbErr) {
+                            console.warn('animal_photos upsert failed:', dbErr);
+                            toast('Photo saved on device — cloud record failed, will show locally');
+                        }
                     } else {
                         console.warn('Storage upload failed:', await uploadRes.text());
                         toast('Saved on device — cloud upload will retry');
