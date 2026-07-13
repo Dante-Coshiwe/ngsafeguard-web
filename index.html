@@ -6049,6 +6049,8 @@ var capacitorLocalNotifications = (function (exports, core) {
                 <div class="field"><label>Password</label><input type="password" id="auth-pw" placeholder="••••••••"
                         value=""></div>
                 <button class="btn btn-primary" onclick="handleAuth()" style="margin-top:6px;">Sign in</button>
+                <p style="text-align:center;margin:10px 0 0;"><a href="#" onclick="forgotPassword();return false;"
+                        style="font-size:12.5px;color:var(--ink-soft);font-weight:600;">Forgot password?</a></p>
                 <button class="btn btn-ghost" style="margin-top:10px;" onclick="startOnboarding()">Create an
                     account</button>
                 <div style="display:flex;align-items:center;gap:10px;margin:16px 0 0;">
@@ -6066,6 +6068,21 @@ var capacitorLocalNotifications = (function (exports, core) {
                 </button>
                 <p style="text-align:center;font-size:11px;color:var(--ink-faint);margin-top:10px;">You can view
                     listings and auction dates without an account. Enquiries require sign-in.</p>
+            </div>
+        </div>
+
+        <!-- ===== RESET PASSWORD (reached via recovery deep link) ===== -->
+        <div class="screen hidden" id="screen-resetpw">
+            <div class="auth-wrap">
+                <h1>Set a new password</h1>
+                <p class="lede">You followed a password-reset link. Choose a new password for your account.</p>
+                <div class="field"><label>New password</label><input type="password" id="resetpw-new"
+                        placeholder="••••••••" value=""></div>
+                <div class="field"><label>Confirm new password</label><input type="password" id="resetpw-confirm"
+                        placeholder="••••••••" value=""></div>
+                <button class="btn btn-primary" onclick="submitNewPassword()" style="margin-top:6px;">Update
+                    password</button>
+                <button class="btn btn-ghost" style="margin-top:10px;" onclick="go('auth')">Back to sign in</button>
             </div>
         </div>
 
@@ -8892,6 +8909,10 @@ var capacitorLocalNotifications = (function (exports, core) {
         const SUPABASE_URL = 'https://udechvpsgztarjwllnbi.supabase.co/functions/v1/api'; // Edge Function proxy — the anon key lives server-side
         const STORAGE_PUBLIC_BASE = 'https://udechvpsgztarjwllnbi.supabase.co'; // public bucket reads stay direct (these URLs are persisted in the DB)
         const SUPABASE_ANON_KEY = ''; // intentionally empty — injected by the proxy
+        // Where Supabase auth emails (confirm signup / reset password) send the user.
+        // Must be registered in the AndroidManifest intent-filter AND in the Supabase
+        // dashboard under Authentication → URL Configuration → Redirect URLs.
+        const AUTH_DEEP_LINK = 'https://dante-coshiwe.github.io/ngsafeguard-web/'; // web build: auth emails redirect to the site itself
 
         /* ==============================================================
            MAPS & LOCATION
@@ -9263,7 +9284,9 @@ var capacitorLocalNotifications = (function (exports, core) {
         }
 
         async function sbSignUp(email, password, meta = {}) {
-            const res = await fetch(SUPABASE_URL + '/auth/v1/signup', {
+            // redirect_to makes the confirmation email (when confirmations are enabled)
+            // deep-link back into the app instead of the Supabase-hosted localhost page.
+            const res = await fetch(SUPABASE_URL + '/auth/v1/signup?redirect_to=' + encodeURIComponent(AUTH_DEEP_LINK), {
                 method: 'POST',
                 headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password, data: meta })
@@ -9271,6 +9294,18 @@ var capacitorLocalNotifications = (function (exports, core) {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error_description || data.msg || 'Sign up failed');
             return data;
+        }
+
+        async function sbRecover(email) {
+            const res = await fetch(SUPABASE_URL + '/auth/v1/recover?redirect_to=' + encodeURIComponent(AUTH_DEEP_LINK), {
+                method: 'POST',
+                headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error_description || data.msg || 'Could not send reset email');
+            }
         }
 
         async function sbSignOut() {
@@ -9818,7 +9853,7 @@ var capacitorLocalNotifications = (function (exports, core) {
             if (!target) { console.warn('Screen not found:', screen); return; }
             target.classList.remove('hidden');
 
-            const noTabScreens = new Set(['auth', 'onboard1', 'onboard2', 'onboard3', 'onboard4', 'onboard5', 'guest-market', 'guest-listing-detail', 'guest-auction-detail', 'camera', 'permission', 'chat', 'import', 'import-map', 'import-preview', 'import-summary']);
+            const noTabScreens = new Set(['auth', 'resetpw', 'onboard1', 'onboard2', 'onboard3', 'onboard4', 'onboard5', 'guest-market', 'guest-listing-detail', 'guest-auction-detail', 'camera', 'permission', 'chat', 'import', 'import-map', 'import-preview', 'import-summary']);
             const tabbar = document.getElementById('tabbar');
             // Signed-in users keep their tab bar while viewing an auction — only true guests lose it.
             const hideTab = noTabScreens.has(screen) && !(screen === 'guest-auction-detail' && currentUser.id && !isGuest);
@@ -9897,97 +9932,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                 currentUser.refreshToken = data.refresh_token;
                 currentUser.id = data.user.id;
                 currentUser.email = email;
-
-                // Try to fetch existing profile
-                let profile = null;
-                try {
-                    const rows = await sbFetch(`users?id=eq.${data.user.id}&select=*`);
-                    profile = rows?.[0] || null;
-                } catch (e) {
-                    console.warn('Profile fetch failed:', e);
-                }
-
-                if (profile) {
-                    currentUser.name = profile.full_name || email.split('@')[0];
-                    currentUser.phone = profile.phone || '';
-                    currentUser.city = profile.city || '';
-                    currentUser.province = profile.province || '';
-                    currentUser.street = profile.street || '';
-                } else {
-                    // No row in public.users — upsert one now
-                    const fallbackName = email.split('@')[0]
-                        .replace(/[._\-]/g, ' ')
-                        .replace(/\b\w/g, c => c.toUpperCase());
-                    currentUser.name = fallbackName;
-
-                    try {
-                        await sbFetch('users', {
-                            method: 'POST',
-                            headers: { 'Prefer': 'return=minimal,resolution=merge-duplicates' },
-                            body: JSON.stringify({
-                                id: data.user.id,
-                                full_name: fallbackName,
-                                email: email,
-                                country: 'South Africa',
-                                trust_score: 0
-                            })
-                        });
-                    } catch (e) {
-                        console.warn('Profile upsert failed:', e);
-                    }
-                }
-
-                // Fetch role — upsert default if missing
-                try {
-                    const roles = await sbFetch(`user_roles?user_id=eq.${data.user.id}&select=role,is_primary`);
-                    if (roles && roles.length) {
-                        const primary = roles.find(r => r.is_primary) || roles[0];
-                        currentUser.role = primary.role;
-                    } else {
-                        currentUser.role = 'Pet Owner';
-                        await sbFetch('user_roles', {
-                            method: 'POST',
-                            prefer: 'return=minimal',
-                            body: JSON.stringify({
-                                user_id: data.user.id,
-                                role: 'Pet Owner',
-                                is_primary: true
-                            })
-                        }).catch(e => console.warn('Role insert:', e));
-                    }
-                } catch (e) {
-                    currentUser.role = 'Pet Owner';
-                    console.warn('Role fetch failed:', e);
-                }
-
-                isGuest = false;
-                await drainSyncQueue().catch(e => console.warn('Drain sync queue error:', e));
-                // These reads are independent — run them in parallel, not one-by-one.
-                await Promise.all([
-                    loadAnimalsFromSupabase(),
-                    loadCalendarFromSupabase(),
-                    loadNotificationsFromSupabase(),
-                    loadVetDataFromSupabase(),
-                    loadTransferHistoryFromSupabase(),
-                    loadIncomingTransfers(),
-                    loadConversationsFromSupabase(),
-                ].map(p => p.catch(e => console.warn('Load error:', e))));
-                rescheduleAllReminders();
-                checkUpcomingReminders();
-                await saveData('auth_session', {
-                    id: currentUser.id,
-                    name: currentUser.name,
-                    email: currentUser.email,
-                    phone: currentUser.phone,
-                    role: currentUser.role,
-                    city: currentUser.city,
-                    province: currentUser.province,
-                    accessToken: currentUser.accessToken,
-                    refreshToken: currentUser.refreshToken
-                });
-                seedVetData();
-                go('home');
-                toast('Welcome back, ' + currentUser.name.split(' ')[0]);
+                await finishSignIn(data.user.id, email);
             } catch (err) {
                 toast(err.message || 'Sign in failed');
             } finally {
@@ -9995,6 +9940,205 @@ var capacitorLocalNotifications = (function (exports, core) {
             }
         }
         window.handleAuth = handleAuth;
+
+        // Shared tail of every sign-in path (password login, email-confirmation deep
+        // link, password-recovery deep link). Expects currentUser.accessToken /
+        // refreshToken / id / email to already be set.
+        async function finishSignIn(userId, email, welcomeMsg) {
+            // Try to fetch existing profile
+            let profile = null;
+            try {
+                const rows = await sbFetch(`users?id=eq.${userId}&select=*`);
+                profile = rows?.[0] || null;
+            } catch (e) {
+                console.warn('Profile fetch failed:', e);
+            }
+
+            if (profile) {
+                currentUser.name = profile.full_name || email.split('@')[0];
+                currentUser.phone = profile.phone || '';
+                currentUser.city = profile.city || '';
+                currentUser.province = profile.province || '';
+                currentUser.street = profile.street || '';
+            } else {
+                // No row in public.users — upsert one now
+                const fallbackName = email.split('@')[0]
+                    .replace(/[._\-]/g, ' ')
+                    .replace(/\b\w/g, c => c.toUpperCase());
+                currentUser.name = fallbackName;
+
+                try {
+                    await sbFetch('users', {
+                        method: 'POST',
+                        headers: { 'Prefer': 'return=minimal,resolution=merge-duplicates' },
+                        body: JSON.stringify({
+                            id: userId,
+                            full_name: fallbackName,
+                            email: email,
+                            country: 'South Africa',
+                            trust_score: 0
+                        })
+                    });
+                } catch (e) {
+                    console.warn('Profile upsert failed:', e);
+                }
+            }
+
+            // Fetch role — upsert default if missing
+            try {
+                const roles = await sbFetch(`user_roles?user_id=eq.${userId}&select=role,is_primary`);
+                if (roles && roles.length) {
+                    const primary = roles.find(r => r.is_primary) || roles[0];
+                    currentUser.role = primary.role;
+                } else {
+                    currentUser.role = 'Pet Owner';
+                    await sbFetch('user_roles', {
+                        method: 'POST',
+                        prefer: 'return=minimal',
+                        body: JSON.stringify({
+                            user_id: userId,
+                            role: 'Pet Owner',
+                            is_primary: true
+                        })
+                    }).catch(e => console.warn('Role insert:', e));
+                }
+            } catch (e) {
+                currentUser.role = 'Pet Owner';
+                console.warn('Role fetch failed:', e);
+            }
+
+            isGuest = false;
+            await drainSyncQueue().catch(e => console.warn('Drain sync queue error:', e));
+            // These reads are independent — run them in parallel, not one-by-one.
+            await Promise.all([
+                loadAnimalsFromSupabase(),
+                loadCalendarFromSupabase(),
+                loadNotificationsFromSupabase(),
+                loadVetDataFromSupabase(),
+                loadTransferHistoryFromSupabase(),
+                loadIncomingTransfers(),
+                loadConversationsFromSupabase(),
+            ].map(p => p.catch(e => console.warn('Load error:', e))));
+            rescheduleAllReminders();
+            checkUpcomingReminders();
+            await saveData('auth_session', {
+                id: currentUser.id,
+                name: currentUser.name,
+                email: currentUser.email,
+                phone: currentUser.phone,
+                role: currentUser.role,
+                city: currentUser.city,
+                province: currentUser.province,
+                accessToken: currentUser.accessToken,
+                refreshToken: currentUser.refreshToken
+            });
+            seedVetData();
+            go('home');
+            toast(welcomeMsg || ('Welcome back, ' + currentUser.name.split(' ')[0]));
+        }
+
+        // "Forgot password?" on the sign-in screen — sends a Supabase recovery email
+        // whose link deep-links back into the app (handled by handleAuthDeepLink).
+        async function forgotPassword() {
+            const email = document.getElementById('auth-email')?.value.trim();
+            if (!email || !email.includes('@')) { toast('Enter your email above first'); return; }
+            try {
+                await sbRecover(email);
+                toast('Password reset link sent to ' + email);
+            } catch (err) {
+                toast(err.message || 'Could not send reset email');
+            }
+        }
+        window.forgotPassword = forgotPassword;
+
+        // Handles ngsafeguard://login-callback#access_token=...&refresh_token=...&type=...
+        // fired when the user taps a Supabase auth email link (confirm signup / recovery).
+        // getLaunchUrl re-returns the same URL after a WebView reload (the resume-reload
+        // pattern), so remember what we've already processed and skip repeats.
+        let _handledAuthUrl = null;
+        async function handleAuthDeepLink(url) {
+            if (!url || !url.startsWith(AUTH_DEEP_LINK)) return;
+            if (url === _handledAuthUrl) return;
+            _handledAuthUrl = url;
+            const hashIndex = url.indexOf('#');
+            const queryIndex = url.indexOf('?');
+            const rawParams = hashIndex >= 0 ? url.slice(hashIndex + 1)
+                : queryIndex >= 0 ? url.slice(queryIndex + 1) : '';
+            const params = new URLSearchParams(rawParams);
+
+            const errDesc = params.get('error_description') || params.get('error');
+            if (errDesc) { toast(errDesc.replace(/\+/g, ' ')); go('auth'); return; }
+
+            const accessToken = params.get('access_token');
+            const refreshToken = params.get('refresh_token');
+            if (!accessToken) return;
+
+            // Web build: the tokens sit in the site's own URL (AUTH_DEEP_LINK is
+            // rewritten to the site origin at build time) — scrub them from the
+            // address bar/history once captured.
+            try {
+                if (url === window.location.href && hashIndex >= 0) {
+                    history.replaceState(null, '', window.location.pathname + window.location.search);
+                }
+            } catch (e) { }
+
+            try {
+                const res = await fetch(SUPABASE_URL + '/auth/v1/user', {
+                    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + accessToken }
+                });
+                const user = await res.json();
+                if (!res.ok || !user.id) throw new Error('invalid token');
+
+                currentUser.accessToken = accessToken;
+                currentUser.refreshToken = refreshToken;
+                currentUser.id = user.id;
+                currentUser.email = user.email;
+
+                if (params.get('type') === 'recovery') {
+                    // The recovery link signs the user in; now let them set a new password.
+                    go('resetpw');
+                    return;
+                }
+                await finishSignIn(user.id, user.email, 'Email confirmed — welcome!');
+            } catch (e) {
+                console.warn('Auth deep link failed:', e);
+                toast('That link has expired — please sign in or request a new one');
+                // Don't yank an already signed-in user back to the auth screen over a
+                // stale link (e.g. a re-delivered launch URL after a WebView reload).
+                if (!currentUser.id) go('auth');
+            }
+        }
+
+        // Submit on the reset-password screen (reached only via a recovery deep link,
+        // so currentUser already holds a valid recovery session).
+        async function submitNewPassword() {
+            const pw = document.getElementById('resetpw-new')?.value;
+            const pw2 = document.getElementById('resetpw-confirm')?.value;
+            if (!pw || pw.length < 8) { toast('Password must be at least 8 characters'); return; }
+            if (pw !== pw2) { toast('Passwords do not match'); return; }
+
+            const btn = document.querySelector('#screen-resetpw .btn-primary');
+            if (btn) btn.classList.add('btn-loading');
+            try {
+                const res = await fetch(SUPABASE_URL + '/auth/v1/user', {
+                    method: 'PUT',
+                    headers: {
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': 'Bearer ' + currentUser.accessToken,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password: pw })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error_description || data.msg || 'Could not update password');
+                await finishSignIn(currentUser.id, currentUser.email, 'Password updated — welcome back!');
+            } catch (err) {
+                toast(err.message || 'Could not update password');
+            } finally {
+                if (btn) btn.classList.remove('btn-loading');
+            }
+        }
+        window.submitNewPassword = submitNewPassword;
 
         function startOnboarding() { go('onboard1'); }
         window.startOnboarding = startOnboarding;
@@ -18512,6 +18656,23 @@ var capacitorLocalNotifications = (function (exports, core) {
                     if (isActive) hydrateFromServer({ resume: true });
                 });
             } catch (e) { console.warn('appStateChange listener:', e); }
+
+            // Supabase auth email links (confirm signup / reset password) deep-link
+            // into the app. appUrlOpen covers the warm-start case (app already
+            // running); getLaunchUrl covers the cold start, where the launch intent
+            // arrives before this listener exists.
+            try {
+                Capacitor.Plugins.App?.addListener?.('appUrlOpen', ({ url }) => {
+                    handleAuthDeepLink(url).catch(e => console.warn('Deep link:', e));
+                });
+                const launch = await Capacitor.Plugins.App?.getLaunchUrl?.();
+                if (launch?.url) await handleAuthDeepLink(launch.url).catch(e => console.warn('Launch deep link:', e));
+            } catch (e) { console.warn('appUrlOpen listener:', e); }
+
+            // Web build: auth email links land on the site itself with the tokens
+            // in the location hash. Never matches in the native WebView (the local
+            // bridge origin isn't AUTH_DEEP_LINK) so this is effectively web-only.
+            handleAuthDeepLink(window.location.href).catch(e => console.warn('URL auth tokens:', e));
 
             document.addEventListener('visibilitychange', () => {
                 if (document.visibilityState === 'visible') hydrateFromServer({ resume: true });
