@@ -9437,7 +9437,7 @@ var capacitorLocalNotifications = (function (exports, core) {
         let _savingVetAppt = false;
         let _sendingTransfer = false;
         let _foundGpsCoords = null;
-        const APP_VERSION = '1.4.2';//Keep updating after each patch and release to the app store. This is used to check if the user has the latest version of the app installed.
+        const APP_VERSION = '1.4.3';//Keep updating after each patch and release to the app store. This is used to check if the user has the latest version of the app installed.
 
         /* ==============================================================
            DATA PERSISTENCE
@@ -14339,6 +14339,9 @@ var capacitorLocalNotifications = (function (exports, core) {
 
             const btn = document.getElementById('import-commit-btn');
             if (btn) { btn.disabled = true; btn.classList.add('btn-loading'); }
+            // Hold off the resume-hydration reload for the duration of the import so a
+            // foreground event can't swap the `animals` array out mid-write.
+            suspendHydration();
             showImportOverlay(total);
             let done = 0, created = 0, updated = 0, failed = 0, queued = 0;
             const needReview = [];
@@ -14377,7 +14380,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                 if (done % 5 === 0) await new Promise(r => requestAnimationFrame(r));
             }
 
-            await saveAllData();
+            await saveAllData().catch(e => console.warn('saveAllData after import:', e));
             // Lightweight batch log (no new DB table) so a wrong import can be traced.
             try {
                 const log = await loadData('importBatches', []);
@@ -14391,6 +14394,7 @@ var capacitorLocalNotifications = (function (exports, core) {
             updateImportOverlay(total, total);
             await new Promise(r => setTimeout(r, 450));
             hideImportOverlay();
+            resumeHydration();
             go('import-summary');
         }
         window.commitImport = commitImport;
@@ -16746,241 +16750,171 @@ var capacitorLocalNotifications = (function (exports, core) {
         let currentCameraMode = 'face';
 
         async function openCamera(mode) {
+            // NOTE: no blocking permission pre-check here. It used to `return` (dead-end)
+            // whenever checkPermissions/requestPermissions came back as anything other than
+            // 'granted'/'limited' — a common Android state (e.g. 'prompt-with-rationale')
+            // even right after the user allows it — which left people unable to ever save a
+            // photo. Capacitor's Camera.getPhoto() already raises the OS permission prompt
+            // itself the first time it runs, so the check is redundant. We warm it up
+            // best-effort (non-blocking) and ALWAYS proceed to the capture screen.
+            currentCameraMode = mode;
+            const labels = { face: 'Position face in frame', nose: 'Position nose in frame', profile: 'Take profile photo', left: 'Left side view', right: 'Right side view', body: 'Full body view' };
+            const titles = { face: 'Face photo', nose: 'Nose photo', profile: 'Profile photo', left: 'Left side', right: 'Right side', body: 'Full body' };
+            const fl = document.getElementById('cam-frame-label');
+            if (fl) fl.textContent = labels[mode] || 'Position in frame';
+            const ct = document.getElementById('cam-title');
+            if (ct) ct.textContent = titles[mode] || 'Take photo';
+            go('camera');
+            // Fire-and-forget permission warm-up so the OS dialog (if any) appears sooner.
             try {
-                // Best-effort permission pre-check. On the WEB build Capacitor's Camera plugin
-                // throws "Not implemented on web" for check/requestPermissions (the browser grants
-                // permission at getPhoto time instead), so a failure here must NOT block opening the
-                // camera — otherwise Face/Nose/Retake become dead buttons on web and biometric trust
-                // points can never be earned. On native this still prompts as before.
-                try {
-                    const permission = await Capacitor.Plugins.Camera.checkPermissions();
-                    if (permission.camera !== 'granted' && permission.camera !== 'limited') {
-                        const request = await Capacitor.Plugins.Camera.requestPermissions();
-                        if (request.camera !== 'granted' && request.camera !== 'limited') {
-                            toast('Camera permission is required');
-                            return;
-                        }
-                    }
-                } catch (permErr) {
-                    console.warn('Camera permission pre-check unavailable (web) — continuing:', permErr.message);
-                }
-                currentCameraMode = mode;
-                const labels = { face: 'Position face in frame', nose: 'Position nose in frame', profile: 'Take profile photo', left: 'Left side view', right: 'Right side view', body: 'Full body view' };
-                const titles = { face: 'Face photo', nose: 'Nose photo', profile: 'Profile photo', left: 'Left side', right: 'Right side', body: 'Full body' };
-                const fl = document.getElementById('cam-frame-label');
-                if (fl) fl.textContent = labels[mode] || 'Position in frame';
-                const ct = document.getElementById('cam-title');
-                if (ct) ct.textContent = titles[mode] || 'Take photo';
-                go('camera');
-            } catch (error) {
-                console.error('Camera permission error:', error);
-                toast('Camera error: ' + error.message);
-            }
+                Capacitor.Plugins.Camera.checkPermissions()
+                    .then(p => { if (p.camera !== 'granted' && p.camera !== 'limited') return Capacitor.Plugins.Camera.requestPermissions(); })
+                    .catch(() => { });
+            } catch (e) { /* web / plugin missing — getPhoto handles it */ }
         }
         window.openCamera = openCamera;
 
         function closeCamera() { go('animal'); }
         window.closeCamera = closeCamera;
 
+        // Shared persistence for a captured/picked photo. Saves to device, uploads to
+        // Supabase storage, and patches the animal row + animal_photos cover. Re-finds the
+        // animal by id at write time (so a background reload swapping the `animals` array
+        // can't strand the write on a detached object) and always persists to local cache.
+        // Returns true if the animal was found and the local write succeeded. Never throws.
+        async function saveCapturedPhoto(dataUrl) {
+            const a = animals.find(x => x.id === currentAnimalId);
+            if (!a) { console.warn('saveCapturedPhoto: animal not found', currentAnimalId); return false; }
+            const mode = currentCameraMode;
+            a.photos = a.photos || {};
+            a.photos[mode] = dataUrl;
+            if (mode === 'face') a.photos.face = true;
+            if (mode === 'nose') a.photos.nose = true;
+
+            const fileName = `animal_${a.id}_${mode}.jpg`;
+            try {
+                await Capacitor.Plugins.Filesystem.writeFile({ path: fileName, data: dataUrl, directory: 'DATA' });
+            } catch (fsErr) { console.warn('Filesystem write failed:', fsErr); }
+
+            if (currentUser.id && currentUser.accessToken) {
+                try {
+                    const base64 = dataUrl.split(',')[1];
+                    const byteChars = atob(base64);
+                    const byteArr = new Uint8Array(byteChars.length);
+                    for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+                    const blob = new Blob([byteArr], { type: 'image/jpeg' });
+
+                    const storagePath = `animals/${a.id}/${mode}_${Date.now()}.jpg`;
+                    const uploadRes = await fetch(
+                        `${SUPABASE_URL}/storage/v1/object/animal-photos/${storagePath}`,
+                        {
+                            method: 'POST',
+                            headers: {
+                                'apikey': SUPABASE_ANON_KEY,
+                                'Authorization': 'Bearer ' + currentUser.accessToken,
+                                'Content-Type': 'image/jpeg'
+                            },
+                            body: blob
+                        }
+                    );
+                    if (uploadRes.ok) {
+                        const publicUrl = `${STORAGE_PUBLIC_BASE}/storage/v1/object/public/animal-photos/${storagePath}`;
+                        const photoField = mode === 'profile' ? 'photo_url' : mode === 'face' ? 'face_photo_url' : 'nose_photo_url';
+                        await sbFetch(`animals?id=eq.${a.id}`, {
+                            method: 'PATCH',
+                            prefer: 'return=minimal',
+                            body: JSON.stringify({
+                                [photoField]: publicUrl,
+                                face_photo_registered: mode === 'face' ? true : a.photos?.face ? true : false,
+                                nose_photo_registered: mode === 'nose' ? true : a.photos?.nose ? true : false
+                            })
+                        }).catch(e => console.warn('Photo URL update:', e));
+                        if (mode === 'profile') a.photoUrl = publicUrl;
+                        // Keep the animal_photos 'profile' row in sync so the PUBLIC
+                        // marketplace (which reads animal_photos, not photo_url) shows the new
+                        // cover. Update-or-insert to avoid duplicate rows.
+                        if (mode === 'profile') {
+                            const photoRow = { public_url: publicUrl, photo_type: 'profile' };
+                            sbFetch(`animal_photos?animal_id=eq.${a.id}&photo_type=eq.profile`, { method: 'PATCH', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(photoRow) })
+                                .then(upd => { if (!upd || !upd.length) return sbFetch('animal_photos', { method: 'POST', prefer: 'return=minimal', body: JSON.stringify({ animal_id: a.id, ...photoRow }) }); })
+                                .catch(() => {});
+                        }
+                        console.log('Photo uploaded:', publicUrl);
+                    } else {
+                        console.warn('Storage upload failed:', await uploadRes.text());
+                        toast('Saved on device — cloud upload will retry');
+                    }
+                } catch (uploadErr) {
+                    console.warn('Photo upload error:', uploadErr);
+                }
+            }
+            // Persist locally so the photo survives a reload even before the server round-trip.
+            try { await saveData('animals', animals); } catch (e) { }
+            return true;
+        }
+
+        // Turn a raw Camera error into a friendly, non-alarming message. Cancelling is not
+        // an error; a real permission denial gets a clear hint instead of "access denied".
+        function photoErrorToast(error, verb) {
+            const msg = (error && error.message) || '';
+            if (/cancel/i.test(msg)) { toast(`${verb} cancelled`); return; }
+            if (/denied|permission/i.test(msg)) { toast('Camera/photos permission is off — enable it in Settings to add photos'); return; }
+            console.error(`${verb} error:`, error);
+            toast(`Couldn't add the photo — please try again`);
+        }
+
         async function openGallery() {
+            suspendHydration();
+            const btn = document.getElementById('cam-capture-btn');
             try {
                 const image = await Capacitor.Plugins.Camera.getPhoto({
-                    quality: 90,
-                    allowEditing: false,
-                    resultType: 'dataUrl',
-                    source: 'photos'
+                    quality: 90, allowEditing: false, resultType: 'dataUrl', source: 'photos'
                 });
-
-                const btn = document.getElementById('cam-capture-btn');
                 if (btn) btn.disabled = true;
-
-                if (currentAnimalId) {
-                    const a = animals.find(x => x.id === currentAnimalId);
-                    if (a) {
-                        a.photos = a.photos || {};
-                        a.photos[currentCameraMode] = image.dataUrl;
-
-                        const fileName = `animal_${currentAnimalId}_${currentCameraMode}.jpg`;
-                        try {
-                            await Capacitor.Plugins.Filesystem.writeFile({
-                                path: fileName,
-                                data: image.dataUrl,
-                                directory: 'DATA'
-                            });
-                        } catch (fsErr) {
-                            console.warn('Filesystem write failed:', fsErr);
-                        }
-
-                        if (currentUser.id && currentUser.accessToken) {
-                            try {
-                                const base64 = image.dataUrl.split(',')[1];
-                                const byteChars = atob(base64);
-                                const byteArr = new Uint8Array(byteChars.length);
-                                for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
-                                const blob = new Blob([byteArr], { type: 'image/jpeg' });
-
-                                const storagePath = `animals/${currentAnimalId}/${currentCameraMode}_${Date.now()}.jpg`;
-                                const uploadRes = await fetch(
-                                    `${SUPABASE_URL}/storage/v1/object/animal-photos/${storagePath}`,
-                                    {
-                                        method: 'POST',
-                                        headers: {
-                                            'apikey': SUPABASE_ANON_KEY,
-                                            'Authorization': 'Bearer ' + currentUser.accessToken,
-                                            'Content-Type': 'image/jpeg'
-                                        },
-                                        body: blob
-                                    }
-                                );
-                                if (uploadRes.ok) {
-                                    const publicUrl = `${STORAGE_PUBLIC_BASE}/storage/v1/object/public/animal-photos/${storagePath}`;
-                                    const photoField = currentCameraMode === 'profile' ? 'photo_url' :
-                                        currentCameraMode === 'face' ? 'face_photo_url' : 'nose_photo_url';
-                                    await sbFetch(`animals?id=eq.${currentAnimalId}`, {
-                                        method: 'PATCH',
-                                        prefer: 'return=minimal',
-                                        body: JSON.stringify({
-                                            [photoField]: publicUrl,
-                                            face_photo_registered: currentCameraMode === 'face' ? true : a.photos?.face ? true : false,
-                                            nose_photo_registered: currentCameraMode === 'nose' ? true : a.photos?.nose ? true : false
-                                        })
-                                    }).catch(e => console.warn('Photo URL update:', e));
-                                    a.photoUrl = currentCameraMode === 'profile' ? publicUrl : a.photoUrl;
-                                    // Keep the animal_photos 'profile' row in sync so the PUBLIC
-                                    // marketplace (which reads animal_photos, not photo_url) shows
-                                    // the new cover. Update-or-insert to avoid duplicate rows.
-                                    if (currentCameraMode === 'profile') {
-                                        const photoRow = { public_url: publicUrl, photo_type: 'profile' };
-                                        sbFetch(`animal_photos?animal_id=eq.${currentAnimalId}&photo_type=eq.profile`, { method: 'PATCH', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(photoRow) })
-                                            .then(upd => { if (!upd || !upd.length) return sbFetch('animal_photos', { method: 'POST', prefer: 'return=minimal', body: JSON.stringify({ animal_id: currentAnimalId, ...photoRow }) }); })
-                                            .catch(() => {});
-                                    }
-                                    console.log('Photo uploaded:', publicUrl);
-                                } else {
-                                    console.warn('Storage upload failed:', await uploadRes.text());
-                                }
-                            } catch (uploadErr) {
-                                console.warn('Photo upload error:', uploadErr);
-                            }
-                        }
-
-                        toast('Photo saved from gallery');
-                        renderAnimal(currentAnimalId);
-                        go('animal');
-                    }
+                const ok = currentAnimalId ? await saveCapturedPhoto(image.dataUrl) : false;
+                if (ok) {
+                    toast('Photo saved from gallery');
+                    renderAnimal(currentAnimalId);
+                    go('animal');
+                } else {
+                    toast('Select an animal first, then add a photo');
                 }
             } catch (error) {
-                console.error('Gallery error:', error);
-                if (error.message === 'User cancelled photos app') {
-                    toast('Gallery selection cancelled');
-                } else {
-                    toast('Gallery error: ' + error.message);
-                }
+                photoErrorToast(error, 'Gallery selection');
+            } finally {
+                if (btn) btn.disabled = false;
+                resumeHydration();
             }
         }
         window.openGallery = openGallery;
 
         async function simulateCapture() {
+            suspendHydration();
+            const btn = document.getElementById('cam-capture-btn');
             try {
                 const image = await Capacitor.Plugins.Camera.getPhoto({
-                    quality: 90,
-                    allowEditing: false,
-                    resultType: 'dataUrl',
-                    source: 'camera'
+                    quality: 90, allowEditing: false, resultType: 'dataUrl', source: 'camera'
                 });
-
-                const btn = document.getElementById('cam-capture-btn');
                 if (btn) btn.disabled = true;
-
-                if (currentAnimalId) {
-                    const a = animals.find(x => x.id === currentAnimalId);
-                    if (a) {
-                        a.photos = a.photos || {};
-                        a.photos[currentCameraMode] = image.dataUrl;
-
-                        const fileName = `animal_${currentAnimalId}_${currentCameraMode}.jpg`;
-                        try {
-                            await Capacitor.Plugins.Filesystem.writeFile({
-                                path: fileName,
-                                data: image.dataUrl,
-                                directory: 'DATA'
-                            });
-                        } catch (fsErr) {
-                            console.warn('Filesystem write failed:', fsErr);
-                        }
-
-                        if (currentUser.id && currentUser.accessToken) {
-                            try {
-                                const base64 = image.dataUrl.split(',')[1];
-                                const byteChars = atob(base64);
-                                const byteArr = new Uint8Array(byteChars.length);
-                                for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
-                                const blob = new Blob([byteArr], { type: 'image/jpeg' });
-
-                                const storagePath = `animals/${currentAnimalId}/${currentCameraMode}_${Date.now()}.jpg`;
-                                const uploadRes = await fetch(
-                                    `${SUPABASE_URL}/storage/v1/object/animal-photos/${storagePath}`,
-                                    {
-                                        method: 'POST',
-                                        headers: {
-                                            'apikey': SUPABASE_ANON_KEY,
-                                            'Authorization': 'Bearer ' + currentUser.accessToken,
-                                            'Content-Type': 'image/jpeg'
-                                        },
-                                        body: blob
-                                    }
-                                );
-                                if (uploadRes.ok) {
-                                    const publicUrl = `${STORAGE_PUBLIC_BASE}/storage/v1/object/public/animal-photos/${storagePath}`;
-                                    const photoField = currentCameraMode === 'profile' ? 'photo_url' :
-                                        currentCameraMode === 'face' ? 'face_photo_url' : 'nose_photo_url';
-                                    await sbFetch(`animals?id=eq.${currentAnimalId}`, {
-                                        method: 'PATCH',
-                                        prefer: 'return=minimal',
-                                        body: JSON.stringify({
-                                            [photoField]: publicUrl,
-                                            face_photo_registered: currentCameraMode === 'face' ? true : a.photos?.face ? true : false,
-                                            nose_photo_registered: currentCameraMode === 'nose' ? true : a.photos?.nose ? true : false
-                                        })
-                                    }).catch(e => console.warn('Photo URL update:', e));
-                                    a.photoUrl = currentCameraMode === 'profile' ? publicUrl : a.photoUrl;
-                                    // Keep the animal_photos 'profile' row in sync so the PUBLIC
-                                    // marketplace (which reads animal_photos, not photo_url) shows
-                                    // the new cover. Update-or-insert to avoid duplicate rows.
-                                    if (currentCameraMode === 'profile') {
-                                        const photoRow = { public_url: publicUrl, photo_type: 'profile' };
-                                        sbFetch(`animal_photos?animal_id=eq.${currentAnimalId}&photo_type=eq.profile`, { method: 'PATCH', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(photoRow) })
-                                            .then(upd => { if (!upd || !upd.length) return sbFetch('animal_photos', { method: 'POST', prefer: 'return=minimal', body: JSON.stringify({ animal_id: currentAnimalId, ...photoRow }) }); })
-                                            .catch(() => {});
-                                    }
-                                    console.log('Photo uploaded:', publicUrl);
-                                } else {
-                                    console.warn('Storage upload failed:', await uploadRes.text());
-                                }
-                            } catch (uploadErr) {
-                                console.warn('Supabase photo upload failed:', uploadErr);
-                            }
-                        }
-
-                        if (currentCameraMode === 'face') a.photos.face = true;
-                        if (currentCameraMode === 'nose') a.photos.nose = true;
-
-                        const slot = document.getElementById('ps-' + currentCameraMode);
-                        if (slot) {
-                            slot.classList.add('filled');
-                            slot.innerHTML =
-                                `<svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Captured</span>`;
-                        }
+                const ok = currentAnimalId ? await saveCapturedPhoto(image.dataUrl) : false;
+                if (ok) {
+                    const slot = document.getElementById('ps-' + currentCameraMode);
+                    if (slot) {
+                        slot.classList.add('filled');
+                        slot.innerHTML = `<svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Captured</span>`;
                     }
+                    toast('Photo captured ✓');
+                    renderVerifyResult();
+                    go('verify');
+                } else {
+                    toast('Select an animal first, then take a photo');
+                    go('animal');
                 }
-
-                if (btn) btn.disabled = false;
-                toast('Photo captured ✓');
-                renderVerifyResult();
-                go('verify');
             } catch (error) {
-                console.error('Camera error:', error);
-                toast('Camera access denied or error occurred');
+                photoErrorToast(error, 'Photo capture');
+            } finally {
+                if (btn) btn.disabled = false;
+                resumeHydration();
             }
         }
         window.simulateCapture = simulateCapture;
@@ -17706,6 +17640,7 @@ var capacitorLocalNotifications = (function (exports, core) {
         window.simulateOffline = simulateOffline;
 
         async function simulatePhotoUpload() {
+            suspendHydration();
             try {
                 const image = await Capacitor.Plugins.Camera.getPhoto({
                     quality: 90,
@@ -17722,16 +17657,19 @@ var capacitorLocalNotifications = (function (exports, core) {
                 }
                 if (label) label.textContent = 'Photo added ✓';
 
-                await Capacitor.Plugins.Filesystem.writeFile({
-                    path: 'profile_photo.jpg',
-                    data: image.dataUrl,
-                    directory: 'DATA'
-                });
+                try {
+                    await Capacitor.Plugins.Filesystem.writeFile({
+                        path: 'profile_photo.jpg',
+                        data: image.dataUrl,
+                        directory: 'DATA'
+                    });
+                } catch (fsErr) { console.warn('Filesystem write failed:', fsErr); }
 
                 toast('Profile photo added');
             } catch (error) {
-                console.error('Camera error:', error);
-                toast('Camera access denied or error occurred');
+                photoErrorToast(error, 'Photo capture');
+            } finally {
+                resumeHydration();
             }
         }
         window.simulatePhotoUpload = simulatePhotoUpload;
@@ -18047,9 +17985,23 @@ var capacitorLocalNotifications = (function (exports, core) {
         function showRefreshBar() { document.getElementById('refreshBar')?.classList.add('show'); }
         function hideRefreshBar() { document.getElementById('refreshBar')?.classList.remove('show'); }
 
+        // Any native plugin op (camera, gallery, file picker) briefly backgrounds then
+        // foregrounds the app. That fires the resume hydration below repeatedly, which
+        // would reload `animals` from the server mid-operation — clobbering a photo the
+        // user is in the middle of saving, and hammering the network in what looks like
+        // an endless "loading" loop. Callers bracket those ops with suspend/resume so a
+        // foreground event during a native op is ignored. Counter (not boolean) so nested
+        // ops are safe.
+        let _hydrateSuspended = 0;
+        function suspendHydration() { _hydrateSuspended++; }
+        function resumeHydration() { _hydrateSuspended = Math.max(0, _hydrateSuspended - 1); }
+        window.suspendHydration = suspendHydration;
+        window.resumeHydration = resumeHydration;
+
         let _hydrating = false;
         async function hydrateFromServer(opts = {}) {
             if (_hydrating) return;
+            if (_hydrateSuspended > 0) return;
             if (isGuest || !currentUser.id) return;
             _hydrating = true;
             showRefreshBar();
