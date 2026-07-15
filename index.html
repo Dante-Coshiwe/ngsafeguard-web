@@ -20319,7 +20319,7 @@ var capacitorLocalNotifications = (function (exports, core) {
    2. Injects the marketing hero panel (#web-hero) into the sign-in screen.
       It is pure static markup; web-shell.css only shows it at ≥1000px, so
       phones and the APK never see it.
-   3. Shows a dismissible "get the Android app" banner to Android browser
+   3. Shows a persistent "get the Android app" banner to Android browser
       visitors (never inside the APK — this script only exists in the web
       build). __APK_RELEASES_URL__ is substituted by build.mjs. */
 (function () {
@@ -20415,10 +20415,13 @@ var capacitorLocalNotifications = (function (exports, core) {
     }
 
     /* --- 3. Android install banner --- */
+    // The banner PERSISTS across visits: dismissing it only hides it for the
+    // current page view (no localStorage flag), so it's back on every load.
+    // Clear the flag older builds stored so users who dismissed it then see
+    // the banner again after this update.
     var isAndroidBrowser = /Android/i.test(navigator.userAgent || '');
-    var dismissed = false;
-    try { dismissed = localStorage.getItem('web_apk_banner_dismissed') === '1'; } catch (e) { /* storage blocked */ }
-    if (isAndroidBrowser && !dismissed) {
+    try { localStorage.removeItem('web_apk_banner_dismissed'); } catch (e) { /* storage blocked */ }
+    if (isAndroidBrowser) {
         var banner = document.createElement('div');
         banner.id = 'web-apk-banner';
         banner.innerHTML =
@@ -20427,7 +20430,6 @@ var capacitorLocalNotifications = (function (exports, core) {
             '<button type="button" aria-label="Dismiss">✕</button>';
         banner.querySelector('button').onclick = function () {
             banner.remove();
-            try { localStorage.setItem('web_apk_banner_dismissed', '1'); } catch (e) { /* ignore */ }
         };
         document.body.appendChild(banner);
     }
