@@ -6044,6 +6044,9 @@ var capacitorLocalNotifications = (function (exports, core) {
                 <h1>NG&nbsp;Safeguard</h1>
                 <p class="lede">Verified identity, lineage and ownership records for every animal you're responsible
                     for.</p>
+                <div id="auth-notice"
+                    style="display:none;background:var(--signal-tint);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.55;color:var(--ink);margin:0 0 14px;text-align:left;">
+                </div>
                 <div class="field"><label>Email address</label><input type="email" id="auth-email"
                         placeholder="you@example.com" value=""></div>
                 <div class="field"><label>Password</label><input type="password" id="auth-pw" placeholder="••••••••"
@@ -7866,6 +7869,10 @@ var capacitorLocalNotifications = (function (exports, core) {
                         <div class="k">App version</div>
                         <div class="v" id="app-version">v1.4.0 (Capacitor)</div>
                     </div>
+                    <div class="info-row" style="cursor:pointer;" onclick="checkForUpdatesNow()">
+                        <div class="k">Check for updates</div>
+                        <div class="v" id="ota-check-status">Check ›</div>
+                    </div>
                     <div class="info-row">
                         <div class="k">Local cache</div>
                         <div class="v">2.3 MB</div>
@@ -9493,7 +9500,275 @@ var capacitorLocalNotifications = (function (exports, core) {
         let _savingVetAppt = false;
         let _sendingTransfer = false;
         let _foundGpsCoords = null;
-        const APP_VERSION = '1.4.5';//Keep updating after each patch and release to the app store. This is used to check if the user has the latest version of the app installed.
+        const APP_VERSION = '1.6.0';//Bump on EVERY release (APK or OTA). Single source of truth: scripts/ota-publish.mjs reads this exact constant to version the published bundle, and the OTA server compares it to decide if a device needs an update.
+
+        /* ==============================================================
+           OTA LIVE UPDATES — self-hosted on Supabase.
+
+           @capgo/capacitor-updater runs in MANUAL mode (autoUpdate:false in
+           capacitor.config.json; Capgo's cloud is never contacted). Flow:
+             1. otaCheckForUpdate() → POST ota-check Edge Function →
+                { updateAvailable, version, url (5-min signed), mandatory }
+             2. runOtaUpdate() downloads the zip and stages it with next()
+                (applies on the next background/restart — never interrupts
+                the user), or applies immediately via set() for the Settings
+                "Check for updates" button and mandatory releases.
+             3. otaNotifyAppReady() runs on every boot; without it the plugin
+                assumes the new bundle crashed and auto-rolls-back to the
+                previous one (that rollback is the safety net for bad JS).
+           Every stage is reported to ota-report → ota_update_logs. OTA
+           failures are silent by default — that table is the only way to
+           see what devices are actually doing.
+
+           Hard-won rules baked in:
+           - Plain fetch + anon key + a hard timeout on EVERY await (network
+             AND native bridge). Nothing auth-bound: a suspended token
+             refresh must never be able to hang the update path.
+           - Never resolve a promise with a Capacitor plugin proxy (proxies
+             answer .then as a native method call and the promise never
+             settles). Plugins are only read synchronously from
+             Capacitor.Plugins here.
+           - Only trust a real downloaded bundle's version; the 'builtin'
+             bundle reports the NATIVE versionName, not a web version.
+           - The server offers strictly-newer semver only (no downgrades),
+             and the whole flow is single-flight + staged-dedupe so launch/
+             resume/timer/button can't download the same bundle twice.
+           Everything is a no-op in the web build.
+           ============================================================== */
+        const OTA_STAGED_KEY = 'ota_staged_version';
+        let _otaDeviceId = null;
+        let _otaRunPromise = null;
+
+        function otaTimeout(promise, ms, label) {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error(label + ' timed out after ' + ms + 'ms')), ms)),
+            ]);
+        }
+
+        // The updater plugin, or null (web build / old APK without the plugin).
+        // Synchronous property read — never returned through a promise.
+        function otaUpdater() {
+            return (Capacitor.isNativePlatform?.() && Capacitor.Plugins?.CapacitorUpdater) || null;
+        }
+
+        // Call an OTA Edge Function with plain fetch + the anon key and a hard
+        // timeout. Deliberately not routed through any auth/session helper.
+        async function otaInvoke(name, body, timeoutMs = 15000) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const res = await fetch(SUPABASE_URL + '/functions/v1/' + name, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        apikey: SUPABASE_ANON_KEY,
+                        Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+                    },
+                    body: JSON.stringify(body),
+                    signal: controller.signal,
+                });
+                if (!res.ok) throw new Error(name + ' HTTP ' + res.status);
+                return await res.json();
+            } finally { clearTimeout(timer); }
+        }
+
+        // Fire-and-forget audit report. Never throws.
+        async function otaReport(body) {
+            try { await otaInvoke('ota-report', body, 10000); }
+            catch (e) { console.warn('[OTA] report failed:', e?.message || e); }
+        }
+
+        // Stable device identity: hardware ANDROID_ID via @capacitor/device, so
+        // the same phone stays ONE device across reinstalls. localStorage random
+        // id only as a last-resort fallback.
+        async function otaGetDeviceId() {
+            if (_otaDeviceId) return _otaDeviceId;
+            try {
+                const dev = Capacitor.Plugins?.Device;
+                if (dev?.getId) {
+                    const res = await otaTimeout(dev.getId(), 5000, 'Device.getId');
+                    const id = res?.identifier || res?.uuid;
+                    if (id) { _otaDeviceId = id; return id; }
+                }
+            } catch (e) { /* fall through */ }
+            let id = localStorage.getItem('ota_device_id');
+            if (!id) {
+                id = 'rnd-' + Math.random().toString(36).slice(2, 12);
+                localStorage.setItem('ota_device_id', id);
+            }
+            _otaDeviceId = id;
+            return id;
+        }
+
+        // Installed APK versionName — lets the server hold back bundles that
+        // need a newer native shell (min_native_version).
+        async function otaGetNativeVersion() {
+            try {
+                const res = await otaTimeout(Capacitor.Plugins.App.getInfo(), 5000, 'App.getInfo');
+                return res?.version || null;
+            } catch (e) { return null; }
+        }
+
+        // The web-bundle version actually running. The 'builtin' bundle reports
+        // the native versionName, not a web version, so it is never trusted.
+        async function otaGetRunningVersion() {
+            const u = otaUpdater();
+            if (u) {
+                try {
+                    const res = await otaTimeout(u.current(), 5000, 'updater.current');
+                    const b = res?.bundle;
+                    if (b && b.id !== 'builtin' && b.version && b.version !== 'builtin') return b.version;
+                } catch (e) { /* fall through */ }
+            }
+            return APP_VERSION;
+        }
+
+        // Mark the booted bundle healthy. MUST run early on every launch or the
+        // plugin rolls back within appReadyTimeout (20s). Also converts a
+        // "staged" marker into an 'applied' report once the staged bundle boots.
+        async function otaNotifyAppReady() {
+            const u = otaUpdater();
+            if (!u) return;
+            try {
+                await u.notifyAppReady();
+                console.info('[OTA] notifyAppReady sent');
+                const staged = localStorage.getItem(OTA_STAGED_KEY);
+                if (staged && (await otaGetRunningVersion()) === staged) {
+                    localStorage.removeItem(OTA_STAGED_KEY);
+                    otaReport({
+                        deviceId: await otaGetDeviceId(),
+                        toVersion: staged,
+                        nativeVersion: await otaGetNativeVersion(),
+                        platform: Capacitor.getPlatform?.() || 'android',
+                        status: 'applied',
+                    });
+                }
+            } catch (e) { console.warn('[OTA] notifyAppReady failed:', e?.message || e); }
+        }
+
+        // Ask the server if a newer bundle exists. Returns the parsed response
+        // or null. Failed checks are reported server-side too — a check that
+        // dies silently on the client makes rollouts look "stuck" for no reason.
+        async function otaCheckForUpdate() {
+            if (!Capacitor.isNativePlatform?.()) return null;
+            const deviceId = await otaGetDeviceId();
+            const nativeVersion = await otaGetNativeVersion();
+            const currentVersion = await otaGetRunningVersion();
+            const platform = Capacitor.getPlatform?.() || 'android';
+            try {
+                return await otaInvoke('ota-check', { deviceId, currentVersion, nativeVersion, platform });
+            } catch (e) {
+                console.warn('[OTA] check failed:', e?.message || e);
+                otaReport({
+                    deviceId, nativeVersion, platform,
+                    fromVersion: currentVersion, toVersion: null,
+                    status: 'failed', errorMessage: 'check: ' + (e?.message || e),
+                });
+                return null;
+            }
+        }
+
+        // Full flow: check → download → stage (or apply now). Single-flight:
+        // the launch check, resume listener, 30-min timer and Settings button
+        // can all fire close together — only one run may be active at a time.
+        function runOtaUpdate(options = {}) {
+            if (!_otaRunPromise) {
+                _otaRunPromise = doRunOtaUpdate(options).finally(() => { _otaRunPromise = null; });
+            }
+            return _otaRunPromise;
+        }
+
+        async function doRunOtaUpdate({ immediate = false } = {}) {
+            const u = otaUpdater();
+            if (!u) {
+                if (Capacitor.isNativePlatform?.()) {
+                    // Updater missing from this APK — OTA can't work until a new
+                    // APK is installed, but still ping the server so the device
+                    // shows up in ota_update_logs instead of failing invisibly.
+                    otaCheckForUpdate().catch(() => { });
+                }
+                return { status: 'skipped' };
+            }
+
+            const check = await otaCheckForUpdate();
+            if (!check || !check.updateAvailable) return { status: 'up_to_date' };
+
+            // Already downloaded + staged on a previous run — don't re-download
+            // the same bundle every launch while it waits for a restart to apply.
+            // (immediate skips this: the user asked to apply NOW.)
+            if (!immediate && check.mandatory !== true && localStorage.getItem(OTA_STAGED_KEY) === check.version) {
+                return { status: 'staged', version: check.version };
+            }
+
+            const base = {
+                deviceId: await otaGetDeviceId(),
+                fromVersion: await otaGetRunningVersion(),
+                toVersion: check.version,
+                nativeVersion: await otaGetNativeVersion(),
+                platform: Capacitor.getPlatform?.() || 'android',
+            };
+
+            try {
+                await otaReport({ ...base, status: 'download_started' });
+                // No checksum/sessionKey args — those trigger Capgo's encrypted-
+                // bundle path. Plain zip; the short-TTL signed URL is transport
+                // integrity. `version` labels the bundle for current()/list().
+                const dl = await otaTimeout(
+                    u.download({ url: check.url, version: check.version }),
+                    180000,
+                    'bundle download',
+                );
+                await otaReport({ ...base, status: 'downloaded' });
+
+                if (immediate || check.mandatory === true) {
+                    await otaReport({ ...base, status: 'applied' });
+                    localStorage.removeItem(OTA_STAGED_KEY);
+                    await u.set({ id: dl.id }); // terminal: reloads into the new bundle
+                    return { status: 'applied', version: check.version };
+                }
+
+                await u.next({ id: dl.id });
+                localStorage.setItem(OTA_STAGED_KEY, check.version);
+                // 'applied' is reported by otaNotifyAppReady on the boot that
+                // actually runs the new bundle.
+                return { status: 'staged', version: check.version };
+            } catch (e) {
+                const message = e?.message || String(e);
+                console.warn('[OTA] update failed:', message);
+                await otaReport({ ...base, status: 'failed', errorMessage: message });
+                return { status: 'error', error: message };
+            }
+        }
+
+        // Settings → "Check for updates": same flow, but applies immediately.
+        async function checkForUpdatesNow() {
+            const statusEl = document.getElementById('ota-check-status');
+            if (!Capacitor.isNativePlatform?.()) { toast('Updates only apply to the installed app'); return; }
+            if (statusEl) statusEl.textContent = 'Checking…';
+            const res = await runOtaUpdate({ immediate: true });
+            if (res.status === 'up_to_date') {
+                if (statusEl) statusEl.textContent = 'Up to date';
+                toast('You have the latest version');
+            } else if (res.status === 'applied') {
+                // set() reloads the app — normally nothing after this runs.
+                if (statusEl) statusEl.textContent = 'Updated';
+            } else if (res.status === 'staged') {
+                if (statusEl) statusEl.textContent = 'Update ready';
+                toast('Update downloaded — it applies on the next restart');
+            } else if (res.status === 'skipped') {
+                if (statusEl) statusEl.textContent = 'Unavailable';
+                toast('Updating the app requires the latest install');
+            } else {
+                if (statusEl) statusEl.textContent = 'Failed — try later';
+                toast('Update check failed — please try again later');
+            }
+        }
+        window.checkForUpdatesNow = checkForUpdatesNow;
+
+        // Confirm bundle health on EVERY boot, as early as possible (the plugin
+        // rolls back if this doesn't arrive within 20s of launch).
+        otaNotifyAppReady();
 
         /* ==============================================================
            DATA PERSISTENCE
@@ -9908,9 +10183,15 @@ var capacitorLocalNotifications = (function (exports, core) {
             if (screen === 'breeding-docs') renderBreedingDocs();
             if (screen === 'breeding-cert') renderBreedingCert();
 
-            // Set app version in settings
+            // Set app version in settings — the OTA bundle version if one is
+            // live, else the baked-in APP_VERSION (they match by design).
             const appVersionEl = document.getElementById('app-version');
-            if (appVersionEl) appVersionEl.textContent = `v${APP_VERSION} (Capacitor)`;
+            if (appVersionEl) {
+                appVersionEl.textContent = `v${APP_VERSION} (Capacitor)`;
+                otaGetRunningVersion()
+                    .then(v => { appVersionEl.textContent = `v${v} (Capacitor)`; })
+                    .catch(() => { });
+            }
         }
         window.go = go;
 
@@ -9945,6 +10226,14 @@ var capacitorLocalNotifications = (function (exports, core) {
         // link, password-recovery deep link). Expects currentUser.accessToken /
         // refreshToken / id / email to already be set.
         async function finishSignIn(userId, email, welcomeMsg) {
+            // Onboarding details stashed by finishOnboarding when signup required an
+            // email-confirmation round-trip (no session until the link is tapped).
+            let pending = null;
+            try {
+                pending = await loadData('pending_profile');
+                if (pending && pending.email !== email) pending = null;
+            } catch (e) { }
+
             // Try to fetch existing profile
             let profile = null;
             try {
@@ -9961,11 +10250,16 @@ var capacitorLocalNotifications = (function (exports, core) {
                 currentUser.province = profile.province || '';
                 currentUser.street = profile.street || '';
             } else {
-                // No row in public.users — upsert one now
-                const fallbackName = email.split('@')[0]
+                // No row in public.users — upsert one now, preferring the stashed
+                // onboarding details over the email-derived fallback name.
+                const fallbackName = (pending && pending.full_name) || email.split('@')[0]
                     .replace(/[._\-]/g, ' ')
                     .replace(/\b\w/g, c => c.toUpperCase());
                 currentUser.name = fallbackName;
+                currentUser.phone = pending?.phone || '';
+                currentUser.city = pending?.city || '';
+                currentUser.province = pending?.province || '';
+                currentUser.street = pending?.street || '';
 
                 try {
                     await sbFetch('users', {
@@ -9975,6 +10269,11 @@ var capacitorLocalNotifications = (function (exports, core) {
                             id: userId,
                             full_name: fallbackName,
                             email: email,
+                            phone: currentUser.phone || null,
+                            street: currentUser.street || null,
+                            city: currentUser.city || null,
+                            province: currentUser.province || null,
+                            farm_name: pending?.farm_name || null,
                             country: 'South Africa',
                             trust_score: 0
                         })
@@ -9984,28 +10283,34 @@ var capacitorLocalNotifications = (function (exports, core) {
                 }
             }
 
-            // Fetch role — upsert default if missing
+            // Fetch role — upsert default (or the stashed onboarding role) if missing
             try {
                 const roles = await sbFetch(`user_roles?user_id=eq.${userId}&select=role,is_primary`);
                 if (roles && roles.length) {
                     const primary = roles.find(r => r.is_primary) || roles[0];
                     currentUser.role = primary.role;
                 } else {
-                    currentUser.role = 'Pet Owner';
+                    currentUser.role = pending?.role || 'Pet Owner';
                     await sbFetch('user_roles', {
                         method: 'POST',
                         prefer: 'return=minimal',
                         body: JSON.stringify({
                             user_id: userId,
-                            role: 'Pet Owner',
+                            role: currentUser.role,
                             is_primary: true
                         })
                     }).catch(e => console.warn('Role insert:', e));
                 }
             } catch (e) {
-                currentUser.role = 'Pet Owner';
+                currentUser.role = pending?.role || 'Pet Owner';
                 console.warn('Role fetch failed:', e);
             }
+
+            if (pending) {
+                try { await Capacitor.Plugins.Preferences.remove({ key: 'pending_profile' }); } catch (e) { }
+            }
+            const notice = document.getElementById('auth-notice');
+            if (notice) notice.style.display = 'none';
 
             isGuest = false;
             await drainSyncQueue().catch(e => console.warn('Drain sync queue error:', e));
@@ -10177,6 +10482,35 @@ var capacitorLocalNotifications = (function (exports, core) {
 
             try {
                 const data = await sbSignUp(email, pw, { full_name: name });
+
+                if (!data.access_token) {
+                    // Email confirmations are enabled: Supabase returns no session
+                    // until the emailed link is tapped. Stash the onboarding details
+                    // so the confirmation deep link can finish creating the profile,
+                    // and tell the user to go confirm.
+                    await saveData('pending_profile', {
+                        email,
+                        full_name: name,
+                        phone: phone || '',
+                        role: selectedRole,
+                        city: document.getElementById('ob-city')?.value.trim() || '',
+                        province: document.getElementById('ob-province')?.value || '',
+                        street: document.getElementById('ob-street')?.value.trim() || '',
+                        farm_name: document.getElementById('ob-farm')?.value.trim() || null
+                    });
+                    go('auth');
+                    const emailField = document.getElementById('auth-email');
+                    if (emailField) emailField.value = email;
+                    const notice = document.getElementById('auth-notice');
+                    if (notice) {
+                        notice.textContent = 'Almost done — confirm your email address. We sent a link to ' +
+                            email + '. Open it on this device to activate your account, then sign in.';
+                        notice.style.display = 'block';
+                    }
+                    toast('Confirmation email sent to ' + email);
+                    return;
+                }
+
                 currentUser.accessToken = data.access_token;
                 currentUser.id = data.user?.id;
                 currentUser.email = email;
@@ -18653,9 +18987,18 @@ var capacitorLocalNotifications = (function (exports, core) {
             // self-guarding (no-op for guests/logged-out, and re-entrancy protected).
             try {
                 Capacitor.Plugins.App?.addListener?.('appStateChange', ({ isActive }) => {
-                    if (isActive) hydrateFromServer({ resume: true });
+                    if (isActive) {
+                        hydrateFromServer({ resume: true });
+                        runOtaUpdate().catch(() => { });
+                    }
                 });
             } catch (e) { console.warn('appStateChange listener:', e); }
+
+            // OTA: check shortly after startup (don't compete with first paint)
+            // and then every 30 minutes. Staged updates apply on the next
+            // background/restart, so a long-running session still converges.
+            setTimeout(() => runOtaUpdate().catch(() => { }), 3000);
+            setInterval(() => runOtaUpdate().catch(() => { }), 30 * 60 * 1000);
 
             // Supabase auth email links (confirm signup / reset password) deep-link
             // into the app. appUrlOpen covers the warm-start case (app already
