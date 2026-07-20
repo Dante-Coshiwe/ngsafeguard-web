@@ -6694,19 +6694,15 @@ var capacitorLocalNotifications = (function (exports, core) {
                 <input type="hidden" id="reg-sire-id">
                 <input type="hidden" id="reg-dam-id">
                 <div class="section-label">
-                    <h3>NFC provisioning</h3>
+                    <h3>NFC tag</h3>
                 </div>
-                <div class="nfc-target" style="background:var(--verify-tint);border-color:var(--line);"
-                    onclick="go('provision')">
-                    <div class="nfc-ring" style="background:var(--verify);"><svg width="20" height="20"
+                <div class="card" style="padding:13px 15px;display:flex;align-items:center;gap:12px;background:var(--verify-tint);border-color:var(--line);">
+                    <div class="nfc-ring" style="background:var(--verify);flex-shrink:0;"><svg width="20" height="20"
                             viewBox="0 0 24 24" fill="none">
                             <path d="M5 13a7 7 0 0114 0M8 16a4 4 0 018 0M11.5 19a.5.5 0 11.001-1.001A.5.5 0 0111.5 19z"
                                 stroke="#fff" stroke-width="1.6" stroke-linecap="round" />
                         </svg></div>
-                    <div class="nfc-target-text">
-                        <div class="t1" style="color:var(--ink);">Provision a new NFC tag</div>
-                        <div class="t2" style="color:var(--ink-faint);">Tap to open NFC writing wizard</div>
-                    </div>
+                    <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.45;">No extra step needed — right after you save, we'll ask you to hold a blank tag to your phone and link it automatically. You can always link a new tag later from the animal's profile.</div>
                 </div>
                 <div class="section-label">
                     <h3>Lineage (optional)</h3>
@@ -7377,7 +7373,7 @@ var capacitorLocalNotifications = (function (exports, core) {
 
         <!-- ===== NFC PROVISIONING WIZARD ===== -->
         <div class="screen hidden" id="screen-provision">
-            <div class="topbar"><button class="icon-btn" onclick="go('register')"><svg width="18" height="18"
+            <div class="topbar"><button class="icon-btn" id="provision-back-btn" onclick="go(_provisionReturnScreen || 'register')"><svg width="18" height="18"
                         viewBox="0 0 24 24" fill="none">
                         <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                             stroke-linejoin="round" />
@@ -7869,6 +7865,10 @@ var capacitorLocalNotifications = (function (exports, core) {
                         <div class="k">App version</div>
                         <div class="v" id="app-version">v1.4.0 (Capacitor)</div>
                     </div>
+                    <div class="info-row" style="cursor:pointer;" onclick="go('release-notes')">
+                        <div class="k">What's new</div>
+                        <div class="v" id="whatsnew-version">›</div>
+                    </div>
                     <div class="info-row" style="cursor:pointer;" onclick="checkForUpdatesNow()">
                         <div class="k">Check for updates</div>
                         <div class="v" id="ota-check-status">Check ›</div>
@@ -7885,6 +7885,19 @@ var capacitorLocalNotifications = (function (exports, core) {
                 <button class="btn btn-danger-ghost" style="margin-top:18px;"
                     onclick="toast('Account deletion request submitted')">Delete account</button>
             </div>
+        </div>
+
+        <!-- ===== RELEASE NOTES / WHAT'S NEW ===== -->
+        <div class="screen hidden" id="screen-release-notes">
+            <div class="topbar"><button class="icon-btn" onclick="go('profile-settings')"><svg width="18" height="18"
+                        viewBox="0 0 24 24" fill="none">
+                        <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg></button>
+                <p class="eyebrow" style="margin:0;">What's new</p>
+                <div style="width:40px;"></div>
+            </div>
+            <div class="scroll" id="release-notes-scroll"></div>
         </div>
 
         <!-- ===== AUCTION ===== -->
@@ -9018,6 +9031,20 @@ var capacitorLocalNotifications = (function (exports, core) {
             return null;
         }
 
+        // Reverse-geocode coords → { city, address } via the free Nominatim service.
+        // Best-effort: returns nulls (never throws) so a scan log / notification can
+        // still go out with just GPS coordinates if the lookup fails or times out.
+        async function reverseGeocodeCoords(lat, lng) {
+            if (lat == null || lng == null) return { city: null, address: null };
+            try {
+                const res = await fetch(`${NOMINATIM_URL}/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14`, { headers: { 'Accept': 'application/json' } });
+                const data = await res.json();
+                const addr = data?.address || {};
+                const city = addr.city || addr.town || addr.village || addr.suburb || addr.county || null;
+                return { city, address: data?.display_name || null };
+            } catch (_) { return { city: null, address: null }; }
+        }
+
         // Open a maps app with the destination (OpenStreetMap web — free, no key).
         function openDirections(lat, lng, label) {
             if (lat == null || lng == null) { toast('No location set for this place'); return; }
@@ -9323,8 +9350,14 @@ var capacitorLocalNotifications = (function (exports, core) {
         }
 
         async function sbRefreshToken() {
-            if (!currentUser.refreshToken || isRefreshingToken) return null;
+            if (!currentUser.refreshToken) return null;
+            // Coalesce concurrent refreshes: on app load a burst of parallel sbFetch
+            // calls all 401 at once with the same expired token. They must all await
+            // the SAME refresh and then retry — a boolean guard that returns null to
+            // the losers left every-but-one request stuck as a permanent 401.
+            if (refreshTokenPromise) return refreshTokenPromise;
             isRefreshingToken = true;
+            refreshTokenPromise = (async () => {
             try {
                 const res = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
                     method: 'POST',
@@ -9368,6 +9401,12 @@ var capacitorLocalNotifications = (function (exports, core) {
                 return null;
             } finally {
                 isRefreshingToken = false;
+            }
+            })();
+            try {
+                return await refreshTokenPromise;
+            } finally {
+                refreshTokenPromise = null;
             }
         }
 
@@ -9425,7 +9464,10 @@ var capacitorLocalNotifications = (function (exports, core) {
         function calcTrustScore(a) {
             let score = 0;
             const earned = {};
-            if (a.nfcUid) {
+            // Every animal gets an nfc_uid the instant it's created (so it's ready to
+            // write) — that alone isn't "identity verified", a physical tag has to
+            // actually carry that UID. nfcProvisioned tracks the real write.
+            if (a.nfcProvisioned) {
                 earned.nfc = true;
                 score += 20
             }
@@ -9495,12 +9537,13 @@ var capacitorLocalNotifications = (function (exports, core) {
         let currentCalYear = new Date().getFullYear();
         let currentCalMonth = new Date().getMonth();
         let isRefreshingToken = false;
+        let refreshTokenPromise = null;
         let _savingAnimal = false;
         let _savingAuction = false;
         let _savingVetAppt = false;
         let _sendingTransfer = false;
         let _foundGpsCoords = null;
-        const APP_VERSION = '1.6.0';//Bump on EVERY release (APK or OTA). Single source of truth: scripts/ota-publish.mjs reads this exact constant to version the published bundle, and the OTA server compares it to decide if a device needs an update.
+        const APP_VERSION = '1.7.0';//Bump on EVERY release (APK or OTA). Single source of truth: scripts/ota-publish.mjs reads this exact constant to version the published bundle, and the OTA server compares it to decide if a device needs an update.
 
         /* ==============================================================
            OTA LIVE UPDATES — self-hosted on Supabase.
@@ -9536,6 +9579,7 @@ var capacitorLocalNotifications = (function (exports, core) {
            Everything is a no-op in the web build.
            ============================================================== */
         const OTA_STAGED_KEY = 'ota_staged_version';
+        const OTA_MANDATORY_DEMO_KEY = 'ota_mandatory_demo_pending';
         let _otaDeviceId = null;
         let _otaRunPromise = null;
 
@@ -9647,6 +9691,51 @@ var capacitorLocalNotifications = (function (exports, core) {
             } catch (e) { console.warn('[OTA] notifyAppReady failed:', e?.message || e); }
         }
 
+        // Apply an already-downloaded, staged bundle NOW (used on resume).
+        //
+        // Why this exists: u.next() stages a bundle to apply on the next NATIVE
+        // relaunch. But on Android a "close and reopen" usually keeps the WebView
+        // (and process) alive — only appStateChange fires, no relaunch — so a
+        // staged bundle can sit unapplied forever while the user keeps seeing the
+        // old version. This forces the staged bundle to boot on the next resume.
+        //
+        // Skips mandatory bundles (those already apply immediately in the flow)
+        // and does nothing if nothing is staged or the staged bundle is already
+        // running. Returns true if it kicked off a reload (nothing after it runs).
+        async function otaApplyStagedIfReady() {
+            const u = otaUpdater();
+            if (!u) return false;
+            const staged = localStorage.getItem(OTA_STAGED_KEY);
+            if (!staged) return false;
+            try {
+                // Already running the staged version? Nothing to do — let
+                // notifyAppReady clear the marker and report 'applied'.
+                if ((await otaGetRunningVersion()) === staged) return false;
+
+                // Find the staged bundle in the plugin's list to get its id.
+                const listed = await otaTimeout(u.list(), 5000, 'updater.list');
+                const bundles = listed?.bundles || listed || [];
+                const match = (Array.isArray(bundles) ? bundles : [])
+                    .find(b => b && b.version === staged && b.id && b.id !== 'builtin');
+                if (!match) return false; // staged marker but no downloaded bundle — let the normal flow re-stage
+
+                otaReport({
+                    deviceId: await otaGetDeviceId(),
+                    fromVersion: await otaGetRunningVersion(),
+                    toVersion: staged,
+                    nativeVersion: await otaGetNativeVersion(),
+                    platform: Capacitor.getPlatform?.() || 'android',
+                    status: 'applied',
+                });
+                localStorage.removeItem(OTA_STAGED_KEY);
+                await u.set({ id: match.id }); // terminal: reloads into the staged bundle
+                return true;
+            } catch (e) {
+                console.warn('[OTA] apply-staged failed:', e?.message || e);
+                return false;
+            }
+        }
+
         // Ask the server if a newer bundle exists. Returns the parsed response
         // or null. Failed checks are reported server-side too — a check that
         // dies silently on the client makes rollouts look "stuck" for no reason.
@@ -9724,6 +9813,11 @@ var capacitorLocalNotifications = (function (exports, core) {
                 if (immediate || check.mandatory === true) {
                     await otaReport({ ...base, status: 'applied' });
                     localStorage.removeItem(OTA_STAGED_KEY);
+                    // Only a genuinely mandatory bundle (not a manual "Check for updates"
+                    // tap) should interrupt the user with the What's New demo — flag it
+                    // for the NEXT boot, since u.set() below reloads before anything
+                    // after it can run in this JS context.
+                    if (check.mandatory === true) localStorage.setItem(OTA_MANDATORY_DEMO_KEY, check.version);
                     await u.set({ id: dl.id }); // terminal: reloads into the new bundle
                     return { status: 'applied', version: check.version };
                 }
@@ -9765,6 +9859,89 @@ var capacitorLocalNotifications = (function (exports, core) {
             }
         }
         window.checkForUpdatesNow = checkForUpdatesNow;
+
+        /* ==============================================================
+           RELEASE NOTES / "WHAT'S NEW"
+           One entry per shipped version, newest first. Settings → "What's
+           new" always shows the latest entry expanded; a mandatory OTA
+           update also shows this same content as a one-time demo screen
+           right after it applies (see showMandatoryUpdateDemo, wired into
+           doRunOtaUpdate's `mandatory` branch).
+           ============================================================== */
+        const RELEASE_NOTES = [
+            {
+                version: '1.7.0',
+                date: '2026-07-20',
+                headline: 'NFC that actually works — and tells you where it was scanned',
+                mandatory: true,
+                items: [
+                    { icon: 'nfc', title: 'Link a new NFC tag from any animal', body: 'Every animal profile now has its own "Link a new NFC tag" button under NFC tag — no need to go back into registration to (re)write a tag.' },
+                    { icon: 'nfc', title: 'Registering an animal links its tag automatically', body: 'Save now walks straight into "hold the tag to your phone" — no separate wizard, and no more incorrect "animal not registered" message right after you just registered it.' },
+                    { icon: 'scan', title: 'Scanning on the home page opens the full profile', body: 'Tap-to-scan now reliably pulls up the animal’s profile and every action on it — including animals you don’t own yourself.' },
+                    { icon: 'pin', title: 'Owners get told where their animal was scanned', body: 'Every scan now captures GPS and messages the owner with the location — shown as a live pin on a map, the same style as the "Find a professional" directory.' },
+                ]
+            }
+        ];
+
+        function renderReleaseNoteItem(it) {
+            const icons = {
+                nfc: '<path d="M5 13a7 7 0 0114 0M8 16a4 4 0 018 0M11.5 19a.5.5 0 11.001-1.001A.5.5 0 0111.5 19z"/>',
+                scan: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M17 17h3M14 20h3"/>',
+                pin: '<path d="M12 21s-7-6.5-7-11a7 7 0 0114 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'
+            };
+            return `<div style="display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line-soft);">
+                <div style="width:34px;height:34px;border-radius:10px;background:var(--verify-tint);display:flex;align-items:center;justify-content:center;color:var(--verify);flex-shrink:0;">${I(icons[it.icon] || icons.nfc, 17)}</div>
+                <div><div style="font-size:13.5px;font-weight:600;margin-bottom:2px;">${esc(it.title)}</div><div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5;">${esc(it.body)}</div></div>
+            </div>`;
+        }
+
+        function renderReleaseNoteCard(rn, opts = {}) {
+            return `<div class="card" style="padding:16px;${opts.margin || ''}">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                    <div style="font-family:var(--font-display);font-size:16px;font-weight:600;">v${esc(rn.version)}</div>
+                    ${rn.mandatory ? '<span class="badge gold" style="font-size:10px;">Mandatory update</span>' : ''}
+                </div>
+                <div style="font-size:12px;color:var(--ink-faint);margin-bottom:10px;">${esc(formatDate(rn.date))}</div>
+                <div style="font-size:13.5px;font-weight:600;margin-bottom:4px;">${esc(rn.headline)}</div>
+                <div>${rn.items.map(renderReleaseNoteItem).join('')}</div>
+            </div>`;
+        }
+
+        function renderReleaseNotes() {
+            const s = document.getElementById('release-notes-scroll');
+            if (!s) return;
+            s.innerHTML = `
+                <h1 style="font-family:var(--font-display);font-size:22px;font-weight:600;margin:4px 0 6px;">What's new</h1>
+                <p style="color:var(--ink-soft);font-size:13.5px;line-height:1.5;margin:0 0 16px;">Everything shipped in NG Safeguard, most recent first.</p>
+                ${RELEASE_NOTES.map((rn, i) => renderReleaseNoteCard(rn, { margin: i ? 'margin-top:12px;' : '' })).join('')}
+            `;
+        }
+        window.renderReleaseNotes = renderReleaseNotes;
+
+        // Shown once, right after a MANDATORY OTA update finishes applying — a short,
+        // dismissible walkthrough of what just changed, so a forced update doesn't
+        // just silently swap the app under the user without explaining why.
+        function showMandatoryUpdateDemo(version) {
+            const rn = RELEASE_NOTES.find(r => r.version === version) || RELEASE_NOTES[0];
+            if (!rn || localStorage.getItem('mandatory_demo_shown_' + rn.version)) return;
+            document.getElementById('mandatory-demo-modal')?.remove();
+            const modal = document.createElement('div');
+            modal.id = 'mandatory-demo-modal';
+            modal.style.cssText = `position:fixed;inset:0;z-index:280;background:rgba(22,32,28,0.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:24px;`;
+            modal.innerHTML = `
+                <div style="background:var(--paper-raised);border-radius:20px;padding:22px;width:100%;max-width:380px;max-height:82vh;overflow:auto;box-shadow:var(--shadow-float);">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+                        <span class="badge gold" style="font-size:10px;">Mandatory update applied</span>
+                    </div>
+                    <h3 style="font-family:var(--font-display);font-size:19px;font-weight:600;margin:8px 0 4px;">You're on v${esc(rn.version)} now</h3>
+                    <p style="font-size:13px;color:var(--ink-soft);margin:0 0 14px;line-height:1.5;">${esc(rn.headline)}</p>
+                    <div>${rn.items.map(renderReleaseNoteItem).join('')}</div>
+                    <button class="btn btn-primary" style="width:100%;margin-top:16px;" onclick="document.getElementById('mandatory-demo-modal').remove()">Got it</button>
+                </div>`;
+            document.getElementById('app').appendChild(modal);
+            localStorage.setItem('mandatory_demo_shown_' + rn.version, '1');
+        }
+        window.showMandatoryUpdateDemo = showMandatoryUpdateDemo;
 
         // Confirm bundle health on EVERY boot, as early as possible (the plugin
         // rolls back if this doesn't arrive within 20s of launch).
@@ -10192,6 +10369,9 @@ var capacitorLocalNotifications = (function (exports, core) {
                     .then(v => { appVersionEl.textContent = `v${v} (Capacitor)`; })
                     .catch(() => { });
             }
+            const whatsNewEl = document.getElementById('whatsnew-version');
+            if (whatsNewEl) whatsNewEl.textContent = `v${APP_VERSION} ›`;
+            if (screen === 'release-notes') renderReleaseNotes();
         }
         window.go = go;
 
@@ -10643,6 +10823,11 @@ var capacitorLocalNotifications = (function (exports, core) {
                 status: a.status,
                 registrationNo: a.registration_no,
                 nfcUid: a.nfc_uid,
+                nfcProvisioned: !!a.nfc_provisioned,
+                // Primary owner's user id — who a scan-location report goes to. Prefer the
+                // ownership row (works for someone else's animal fetched via fetchScannedAnimal,
+                // where currentUser is never the owner) and fall back to the raw column.
+                ownerId: ownRows.find(o => o.ownership_type === 'primary')?.owner_id || a.owner_id || null,
                 // For a co-owned animal the primary owner is someone else — show their name.
                 owner: isCoOwner ? (primaryName || 'Primary owner') : currentUser.name,
                 ...deriveOwnerSplit(a.ownership),
@@ -11105,6 +11290,8 @@ var capacitorLocalNotifications = (function (exports, core) {
                                 id: m.id,
                                 sender: m.sender_id === currentUser.id ? 'me' : 'them',
                                 text: m.content,
+                                contentType: m.content_type || 'text',
+                                attachmentUrl: m.attachment_url || null,
                                 timestamp: new Date(m.sent_at).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }),
                                 read: m.read
                             }))
@@ -14287,11 +14474,19 @@ var capacitorLocalNotifications = (function (exports, core) {
                 toast(queuedOffline
                     ? 'Saved offline — will sync when back online'
                     : `${name} registered and saved ✓`);
-                go('home');
 
                 // Fire-and-forget post-save hooks (they toast their own progress/result).
                 flushPendingBreedingDocs('reg', savedId !== localId ? savedId : null);
                 checkSimilarOnScan(savedId);
+
+                // Registering used to hand off to a separate "tap to open the NFC wizard"
+                // step, which read as broken — the animal was already fully registered
+                // (nfc_uid assigned the moment it saved) but nothing prompted the actual
+                // tag write, so scanning a blank tag right after would say "not found".
+                // Fold the write into Save itself: prompt for the physical tag right now,
+                // then go home either way (declining/skipping never blocks registration).
+                await promptWriteNfcOnRegister(localAnimal.id);
+                go('home');
             } catch (err) {
                 toast('Error saving: ' + err.message);
             } finally {
@@ -15423,6 +15618,14 @@ var capacitorLocalNotifications = (function (exports, core) {
           <button class="btn btn-ghost" style="padding:10px;flex:1;" onclick="openCamera('nose')">${I('<ellipse cx="12" cy="13" rx="5" ry="4"/>', 15)} Nose</button>
           <button class="btn btn-ghost" style="padding:10px;flex:1;" onclick="renderVerifyResult();go('verify')">${I('<path d="M9 12l2 2 4-4m6-2a10 10 0 11-20 0 10 10 0 0120 0z"/>', 15)} Verify</button>
         </div>
+      </div>
+      <div class="section-label"><h3>NFC tag</h3></div>
+      <div class="card" style="padding:13px 15px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${earned.nfc ? 0 : 10}px;">
+          <div><div style="font-size:13.5px;font-weight:600;">${earned.nfc ? 'Tag linked' : 'No tag written yet'}</div><div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px;font-family:var(--font-mono);">${esc(a.nfcUid || '—')}</div></div>
+          <span class="badge ${earned.nfc ? 'verified' : 'pending'}">${earned.nfc ? 'Written' : 'Not written'}</span>
+        </div>
+        <button class="btn btn-primary" style="padding:10px;width:100%;${earned.nfc ? 'margin-top:10px;' : ''}" onclick="currentAnimalId='${a.id}';linkNewNfcTag()">${I('<path d="M5 13a7 7 0 0114 0M8 16a4 4 0 018 0M11.5 19a.5.5 0 11.001-1.001A.5.5 0 0111.5 19z"/>', 15)} Link a new NFC tag</button>
       </div>
       <div class="section-label"><h3>Marketplace</h3></div>
       <div class="card" style="padding:13px 15px;">
@@ -16843,15 +17046,44 @@ var capacitorLocalNotifications = (function (exports, core) {
         }
         window.markConversationRead = markConversationRead;
 
+        // A "scan_location" message carries its map data as JSON in attachmentUrl
+        // (lat/lng/address/animalName/scanType/scannerName) rather than a real URL —
+        // reusing the messages table's existing attachment column instead of a schema
+        // change. Renders the same read-only pin-on-tile card the "Find a professional"
+        // directory uses (initStaticMap / .dir-map), just addressed to this chat bubble.
+        function scanLocationBubbleHtml(m, idx) {
+            let d = null;
+            try { d = JSON.parse(m.attachmentUrl || '{}'); } catch (_) { d = {}; }
+            const mapId = `scanloc-map-${m.id || idx}`;
+            const hasCoords = d.lat != null && d.lng != null;
+            return `
+      <div style="max-width:86%;">
+        <div style="font-size:13px;margin-bottom:8px;">${esc(m.text || '')}</div>
+        ${hasCoords ? `
+        <div id="${mapId}" class="dir-map" style="height:150px;border-radius:11px;overflow:hidden;background:var(--surface-2,#e9efe9);margin-bottom:6px;"></div>
+        <button class="btn btn-ghost" style="padding:8px;font-size:11.5px;" onclick="openDirections(${d.lat},${d.lng},'${jsAttr(d.animalName || 'Scan location')}')">🧭 Directions</button>
+        ` : `<div style="font-size:11.5px;color:var(--ink-faint);">No precise coordinates were available for this scan.</div>`}
+      </div>`;
+        }
+
         function renderChatMessages(c) {
             const scroll = document.getElementById('chat-scroll');
             if (!scroll) return;
-            scroll.innerHTML = c.messages.map(m => `
+            scroll.innerHTML = c.messages.map((m, i) => `
     <div class="msg-wrap ${m.sender === 'me' ? 'sent' : 'recv'}">
       ${m.sender !== 'me' ? `<div class="msg-sender">${esc(c.otherName)}</div>` : ''}
-      <div class="msg-bubble ${m.sender === 'me' ? 'sent' : 'recv'}">${esc(m.text)}<div class="msg-time ${m.sender === 'me' ? '' : 'left'}">${esc(m.timestamp)}</div></div>
+      <div class="msg-bubble ${m.sender === 'me' ? 'sent' : 'recv'}">${m.contentType === 'scan_location' ? scanLocationBubbleHtml(m, i) : esc(m.text)}<div class="msg-time ${m.sender === 'me' ? '' : 'left'}">${esc(m.timestamp)}</div></div>
     </div>`).join('');
             setTimeout(() => { scroll.scrollTop = scroll.scrollHeight; }, 50);
+            // Render each scan-location bubble's pin on its own read-only mini-map,
+            // same as the vet/breeder directory cards.
+            c.messages.forEach((m, i) => {
+                if (m.contentType !== 'scan_location') return;
+                try {
+                    const d = JSON.parse(m.attachmentUrl || '{}');
+                    if (d.lat != null && d.lng != null) initStaticMap(`scanloc-map-${m.id || i}`, d.lat, d.lng, d.animalName || '');
+                } catch (_) { }
+            });
         }
 
         function onChatInput() {
@@ -17778,14 +18010,18 @@ var capacitorLocalNotifications = (function (exports, core) {
                 if (animal) animalId = animal.id;
             }
 
+            // Not a local animal — could still be a real one belonging to someone else
+            // (this is the common case: scanning someone ELSE's animal). RLS allows
+            // reading any animal by id/nfc_uid/registration_no, so look it up server-
+            // side by whichever identifier the tag actually gave us.
             if (!animalId && currentUser.id) {
                 try {
                     const uid = tagId ? formatNfcUid(tagId) : null;
                     const regNo = payload?.match(/NG-\d{4}-\d{5}/)?.[0] || null;
                     if (uid || regNo) {
                         const query = uid
-                            ? `animals?nfc_uid=ilike.${encodeURIComponent(uid)}&select=id,name,status&limit=1`
-                            : `animals?registration_no=eq.${encodeURIComponent(regNo)}&select=id,name,status&limit=1`;
+                            ? `animals?nfc_uid=ilike.${encodeURIComponent(uid)}&is_deleted=eq.false&select=id&limit=1`
+                            : `animals?registration_no=eq.${encodeURIComponent(regNo)}&is_deleted=eq.false&select=id&limit=1`;
                         const results = await sbFetch(query);
                         if (results && results[0]) animalId = results[0].id;
                     }
@@ -17802,6 +18038,18 @@ var capacitorLocalNotifications = (function (exports, core) {
             }
 
             if (animalId) {
+                // Make sure it's actually loaded before opening it — animalId here can
+                // be a real DB id for someone ELSE's animal that was never in the local
+                // `animals`/`vetClientAnimals` arrays (openAnimal only knows those two),
+                // which used to make the whole scan silently do nothing. fetchScannedAnimal
+                // pulls the full row (RLS allows reading any animal by id) and resolves
+                // the owner's name so the profile always renders, own tag or not.
+                const known = animals.some(x => x.id === animalId) || vetClientAnimals.some(x => x.id === animalId);
+                if (!known) {
+                    const fetched = await fetchScannedAnimal(animalId);
+                    if (!fetched) { toast('Tag not found in records — is it registered?'); return; }
+                    vetClientAnimals.push(fetched); // cache so openAnimal/renderAnimal can find it
+                }
                 logScanEvent(animalId, 'nfc', 'verified');
                 openAnimal(animalId);
                 toast('Tag verified ✓');
@@ -17959,38 +18207,123 @@ var capacitorLocalNotifications = (function (exports, core) {
         }
         window.resolveManualTag = resolveManualTag;
 
+        // Logs a scan AND — for an NFC/QR verify scan of someone's animal — tells the
+        // owner where and when it happened, the way "Find a professional" shows a vet's
+        // pin on a live map: a chat message with an embedded read-only mini-map at the
+        // exact GPS coordinates the scan was captured at.
         async function logScanEvent(animalId, scanType = 'nfc', scanResult = 'verified', extras = {}) {
             if (!animalId) return;
-            let locationCity = null, locationAddress = null, lat = null, lng = null;
+            let lat = null, lng = null;
             try {
                 const pos = await Capacitor.Plugins.Geolocation.getCurrentPosition({ timeout: 3000 });
                 lat = pos.coords.latitude;
                 lng = pos.coords.longitude;
             } catch (_) { }
+            const { city: locationCity, address: locationAddress } = await reverseGeocodeCoords(lat, lng);
 
             const logEntry = {
                 animal_id: animalId,
                 scan_type: scanType,
                 scan_result: scanResult,
-                scanned_by: currentUser.id || null,
+                // NOTE: the scan_logs column is scanned_by_user_id, not scanned_by — an
+                // earlier version of this insert used the wrong name and silently 400'd
+                // on every single scan (no rows were ever actually logged).
+                scanned_by_user_id: currentUser.id || null,
                 scanned_by_role: currentUser.role || 'Guest',
+                scanner_name: currentUser.name || null,
                 location_city: locationCity,
                 location_address: locationAddress,
                 gps_latitude: lat,
                 gps_longitude: lng,
-                device_info: navigator.userAgent.substring(0, 200),
+                device_type: Capacitor.getPlatform?.() || 'web',
+                app_version: APP_VERSION,
                 suspicious: false,
                 ...extras
             };
 
+            let scanId = null;
             if (currentUser.id || scanType === 'recovery') {
-                sbFetch('scan_logs', {
-                    method: 'POST', prefer: 'return=minimal',
-                    body: JSON.stringify(logEntry)
-                }).catch(e => console.warn('Scan log insert failed:', e));
+                try {
+                    const res = await sbFetch('scan_logs', {
+                        method: 'POST', prefer: 'return=representation',
+                        body: JSON.stringify(logEntry)
+                    });
+                    scanId = res?.[0]?.id || null;
+                } catch (e) { console.warn('Scan log insert failed:', e); }
+            }
+
+            // Tell the owner where their animal's tag was just scanned — skip when the
+            // scanner IS the owner (scanning your own animal isn't news to you) and skip
+            // "found" reports (those already go through the dedicated found-animal flow).
+            if (scanType !== 'recovery' && (lat != null || lng != null)) {
+                notifyOwnerOfScanLocation(animalId, { lat, lng, locationCity, locationAddress, scanType, scanId }).catch(e => console.warn('Scan-location notify failed:', e));
             }
         }
         window.logScanEvent = logScanEvent;
+
+        // Sends the owner a chat message with an embedded mini-map pin for where their
+        // animal was just scanned, plus a notification bell entry that deep-links to it.
+        async function notifyOwnerOfScanLocation(animalId, { lat, lng, locationCity, locationAddress, scanType, scanId }) {
+            const a = animals.find(x => x.id === animalId) || vetClientAnimals.find(x => x.id === animalId);
+            if (!a) return;
+            const ownerId = a.ownerId;
+            if (!ownerId || ownerId === currentUser.id) return; // no owner on file, or scanning your own animal
+
+            const scannerLabel = currentUser.name ? `${currentUser.name}${currentUser.role ? ' (' + currentUser.role + ')' : ''}` : 'Someone';
+            const whereText = locationCity ? ` near ${locationCity}` : '';
+            const text = `${scannerLabel} scanned ${a.name}'s NFC tag${whereText}.`;
+
+            // Conversations use buyer_id/seller_id generically for "the two people talking" —
+            // reuse messageVet's find-or-create shape so this shows up as a normal chat.
+            let conv = conversations.find(c =>
+                (c.buyerId === currentUser.id && c.sellerId === ownerId) ||
+                (c.buyerId === ownerId && c.sellerId === currentUser.id)
+            );
+            if (!conv) {
+                conv = {
+                    id: 'c' + Date.now(), animalId: a.id, animalName: a.name,
+                    otherName: a.owner || 'Owner', otherRole: '', otherUserId: ownerId,
+                    buyerId: currentUser.id, sellerId: ownerId,
+                    lastMessage: '', lastTime: '', unreadCount: 0, messages: []
+                };
+                conversations.unshift(conv);
+            }
+            const persisted = await ensureConvPersisted(conv);
+            if (!persisted) return;
+
+            const attachment = JSON.stringify({
+                lat, lng, address: locationAddress || null, animalName: a.name,
+                scanType, scannerName: currentUser.name || null, scannedAt: new Date().toISOString()
+            });
+            const localMsg = { id: 'm' + Date.now(), sender: 'them', text, contentType: 'scan_location', attachmentUrl: attachment, timestamp: new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }), read: false };
+            conv.messages.push(localMsg);
+            conv.lastMessage = text;
+            conv.lastTime = 'Just now';
+            conv.unreadCount = (conv.unreadCount || 0) + 1;
+            saveData('conversations', conversations);
+            if (currentConvId === conv.id) renderChatMessages(conv);
+
+            try {
+                const inserted = await sbFetch('messages', {
+                    method: 'POST', prefer: 'return=representation',
+                    body: JSON.stringify({
+                        conversation_id: conv.id,
+                        sender_id: currentUser.id,
+                        content: text,
+                        content_type: 'scan_location',
+                        attachment_url: attachment
+                    })
+                });
+                if (inserted?.[0]?.id) localMsg.id = inserted[0].id;
+                sbFetch(`conversations?id=eq.${conv.id}`, {
+                    method: 'PATCH', prefer: 'return=minimal',
+                    body: JSON.stringify({ last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+                }).catch(() => { });
+            } catch (e) { console.warn('Scan-location message send failed:', e); }
+
+            notifyUser(ownerId, 'scan_alert', `${a.name}'s tag was scanned`, text, 'messages');
+        }
+        window.notifyOwnerOfScanLocation = notifyOwnerOfScanLocation;
 
         function showFoundResultUnknown(payload) {
             const s = document.getElementById('found-result-scroll') || document.getElementById('guest-listing-detail-scroll');
@@ -18086,9 +18419,98 @@ var capacitorLocalNotifications = (function (exports, core) {
         }
         window.submitFoundReport = submitFoundReport;
 
+        // Fires the moment an animal finishes registering: prompts to hold a blank NFC
+        // tag to the phone and writes it immediately, so "register" and "get a working
+        // tag" are one action instead of two. Never blocks or fails registration —
+        // any error/timeout/decline just leaves nfc_uid unwritten (linkable later from
+        // the animal's profile), and the animal is already saved either way.
+        function promptWriteNfcOnRegister(animalId) {
+            return new Promise((resolve) => {
+                const NfcPlugin = window.Capacitor?.Plugins?.Nfc;
+                const hasNfc = !!NfcPlugin || 'NDEFReader' in window;
+                if (!hasNfc) { resolve(); return; } // no hardware — nothing to prompt
+
+                document.getElementById('auto-nfc-modal')?.remove();
+                const modal = document.createElement('div');
+                modal.id = 'auto-nfc-modal';
+                modal.style.cssText = `position:fixed;inset:0;z-index:260;background:rgba(22,32,28,0.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:24px;`;
+                modal.innerHTML = `
+                    <div style="background:var(--paper-raised);border-radius:20px;padding:26px 22px;width:100%;max-width:340px;box-shadow:var(--shadow-float);text-align:center;">
+                        <div style="width:56px;height:56px;border-radius:16px;background:var(--verify-tint);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;color:var(--verify);">
+                            <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M5 13a7 7 0 0114 0M8 16a4 4 0 018 0M11.5 19a.5.5 0 11.001-1.001A.5.5 0 0111.5 19z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                        </div>
+                        <h3 style="font-family:var(--font-display);font-size:17px;font-weight:600;margin:0 0 6px;">Hold the NFC tag to your phone</h3>
+                        <p id="auto-nfc-status" style="font-size:13px;color:var(--ink-soft);margin:0 0 18px;line-height:1.5;">Registration is saved — this just links a physical tag to it now, so it works the moment you scan it.</p>
+                        <button class="btn btn-ghost" style="width:100%;" onclick="_autoNfcSkip()">Skip — I'll link a tag later</button>
+                    </div>`;
+                document.getElementById('app').appendChild(modal);
+
+                let settled = false;
+                const finish = () => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    modal.remove();
+                    resolve();
+                };
+                window._autoNfcSkip = finish;
+                const timer = setTimeout(finish, 25000); // never blocks registration for long
+
+                (async () => {
+                    const a = animals.find(x => x.id === animalId);
+                    if (!a) { finish(); return; }
+                    const url = `https://ngsafeguard.app/v/${a.registrationNo}`;
+                    const payload = `${url}|animal_id:${animalId}|uid:${a.nfcUid}`;
+                    const statusEl = document.getElementById('auto-nfc-status');
+                    try {
+                        if (NfcPlugin) {
+                            await NfcPlugin.write({ message: { records: [{ recordType: 'url', url }, { recordType: 'text', text: payload }] } });
+                        } else {
+                            const writer = new NDEFReader();
+                            await writer.write({ records: [{ recordType: 'url', data: url }] });
+                        }
+                        a.nfcProvisioned = true;
+                        if (currentUser.id && isServerUuid(animalId)) {
+                            sbFetch(`animals?id=eq.${animalId}`, { method: 'PATCH', prefer: 'return=minimal', body: JSON.stringify({ nfc_provisioned: true }) }).catch(() => { });
+                        }
+                        if (statusEl) statusEl.textContent = 'Tag linked ✓';
+                        toast('NFC tag linked ✓');
+                        setTimeout(finish, 900);
+                    } catch (e) {
+                        // Declined/timed out/no tag presented — fine, the profile's
+                        // "Link a new NFC tag" button covers this later.
+                        finish();
+                    }
+                })();
+            });
+        }
+        window.promptWriteNfcOnRegister = promptWriteNfcOnRegister;
+
+        // Where "← Back" on the provision screen returns to. Registration sets this to
+        // 'register' before go('provision'); the animal-profile "Link a new NFC tag"
+        // button (linkNewNfcTag) sets it to 'animal' instead — same wizard, different
+        // return point, so the back button always lands somewhere sensible.
+        let _provisionReturnScreen = 'register';
+
+        // Open the NFC-writing wizard for the CURRENTLY SELECTED animal (currentAnimalId
+        // must already be set) and remember where "back" should go afterwards.
+        function linkNewNfcTag() {
+            const a = animals.find(x => x.id === currentAnimalId) || vetClientAnimals.find(x => x.id === currentAnimalId);
+            if (!a) { toast('Select an animal first'); return; }
+            _provisionReturnScreen = 'animal';
+            const resultEl = document.getElementById('provision-result');
+            if (resultEl) { resultEl.style.display = 'none'; resultEl.innerHTML = ''; }
+            ['ps1', 'ps2', 'ps3', 'ps4', 'ps5'].forEach((id, i) => {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('done', i === 0);
+            });
+            go('provision');
+        }
+        window.linkNewNfcTag = linkNewNfcTag;
+
         async function provisionNFCTag() {
             if (!currentAnimalId) { toast('Select an animal first'); return; }
-            const a = animals.find(x => x.id === currentAnimalId);
+            const a = animals.find(x => x.id === currentAnimalId) || vetClientAnimals.find(x => x.id === currentAnimalId);
             if (!a) return;
 
             const steps = [
@@ -18100,8 +18522,26 @@ var capacitorLocalNotifications = (function (exports, core) {
             const btn = document.querySelector('#screen-provision .btn-primary');
             if (btn) { btn.textContent = 'Writing…'; btn.disabled = true; }
 
+            const backScreen = _provisionReturnScreen || 'register';
+            const backLabel = backScreen === 'animal' ? `← Back to ${esc(a.name)}` : '← Back to animal registration';
+            const backBtn = `<button class="btn btn-ghost" style="margin-top:10px;padding:10px;" onclick="go('${backScreen}')">${backLabel}</button>`;
+
             const url = `https://ngsafeguard.app/v/${a.registrationNo}`;
             const payload = `${url}|animal_id:${currentAnimalId}|uid:${a.nfcUid}`;
+
+            // Marks the tag as physically written — separate from nfcUid (which every
+            // animal gets the instant it's created, ready to be written). Best-effort:
+            // an animal created before this column existed just keeps showing "not written".
+            const markProvisioned = async () => {
+                a.nfcProvisioned = true;
+                if (currentUser.id && isServerUuid(currentAnimalId)) {
+                    await sbFetch(`animals?id=eq.${currentAnimalId}`, {
+                        method: 'PATCH', prefer: 'return=minimal',
+                        body: JSON.stringify({ nfc_provisioned: true })
+                    }).catch(e => console.warn('nfc_provisioned update:', e));
+                }
+                if (typeof renderAnimal === 'function') renderAnimal(currentAnimalId);
+            };
 
             const NfcPlugin = window.Capacitor?.Plugins?.Nfc;
 
@@ -18120,6 +18560,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                     });
 
                     steps.forEach(s => s?.classList.add('done'));
+                    await markProvisioned();
                     if (resultEl) {
                         resultEl.style.display = 'block';
                         resultEl.innerHTML = `
@@ -18130,16 +18571,8 @@ var capacitorLocalNotifications = (function (exports, core) {
                                 <span style="font-size:13.5px;font-weight:700;color:var(--verify);">NFC tag provisioned!</span>
                             </div>
                             <div style="font-size:12.5px;color:var(--ink-soft);">Tag linked to ${esc(a.name)} (${esc(a.registrationNo)}). Anyone can tap it to view the public record.</div>
-                            <button class="btn btn-ghost" style="margin-top:10px;padding:10px;" onclick="go('register')">
-                                ← Back to animal registration
-                            </button>
+                            ${backBtn}
                         `;
-                    }
-                    if (currentUser.id) {
-                        await sbFetch(`animals?id=eq.${currentAnimalId}`, {
-                            method: 'PATCH', prefer: 'return=minimal',
-                            body: JSON.stringify({ nfc_uid: a.nfcUid, nfc_provisioned: true })
-                        }).catch(e => console.warn('NFC UID update:', e));
                     }
                     toast('Tag written successfully ✓');
                 } catch (e) {
@@ -18152,13 +18585,12 @@ var capacitorLocalNotifications = (function (exports, core) {
                     const writer = new NDEFReader();
                     await writer.write({ records: [{ recordType: 'url', data: url }] });
                     steps.forEach(s => s?.classList.add('done'));
+                    await markProvisioned();
                     if (resultEl) {
                         resultEl.style.display = 'block';
                         resultEl.innerHTML = `
                             <div style="color:var(--verify);font-weight:700;">✓ Tag provisioned for ${esc(a.name)}</div>
-                            <button class="btn btn-ghost" style="margin-top:10px;padding:10px;" onclick="go('register')">
-                                ← Back to animal registration
-                            </button>
+                            ${backBtn}
                         `;
                     }
                     toast('Tag written ✓');
@@ -18175,9 +18607,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                         </div>
                         <div style="font-family:var(--font-mono);font-size:11px;word-break:break-all;padding:8px;background:var(--line-soft);border-radius:8px;">${url}</div>
                         <button class="btn btn-ghost" style="margin-top:10px;padding:10px;" onclick="navigator.clipboard?.writeText('${url}').then(()=>toast('URL copied'))">Copy URL</button>
-                        <button class="btn btn-ghost" style="margin-top:10px;padding:10px;" onclick="go('register')">
-                            ← Back to animal registration
-                        </button>
+                        ${backBtn}
                     `;
                 }
             }
@@ -18976,6 +19406,17 @@ var capacitorLocalNotifications = (function (exports, core) {
                 }
                 seedVetData();
                 go('auth');
+            } else {
+                // A mandatory OTA update reloads the app immediately (doRunOtaUpdate's
+                // `mandatory` branch) — there's no JS context left to show a "here's
+                // what's new" screen right then, so it leaves a flag and this boot
+                // (the one actually running the new bundle) shows it once, after the
+                // home screen has had a moment to paint.
+                const pendingDemo = localStorage.getItem(OTA_MANDATORY_DEMO_KEY);
+                if (pendingDemo) {
+                    localStorage.removeItem(OTA_MANDATORY_DEMO_KEY);
+                    setTimeout(() => showMandatoryUpdateDemo(pendingDemo), 1200);
+                }
             }
 
             // Refresh data every time the app returns to the foreground. On Android the
@@ -18989,7 +19430,14 @@ var capacitorLocalNotifications = (function (exports, core) {
                 Capacitor.Plugins.App?.addListener?.('appStateChange', ({ isActive }) => {
                     if (isActive) {
                         hydrateFromServer({ resume: true });
-                        runOtaUpdate().catch(() => { });
+                        // If a bundle was downloaded+staged on a previous run,
+                        // apply it now (reloads the app) — Android warm-resume
+                        // keeps the WebView alive, so a staged bundle would
+                        // otherwise never boot. Only check for a NEW bundle when
+                        // nothing was staged (a reload makes that check moot).
+                        otaApplyStagedIfReady().then(applied => {
+                            if (!applied) runOtaUpdate().catch(() => { });
+                        }).catch(() => { runOtaUpdate().catch(() => { }); });
                     }
                 });
             } catch (e) { console.warn('appStateChange listener:', e); }
