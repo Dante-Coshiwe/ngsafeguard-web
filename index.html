@@ -1800,7 +1800,7 @@
         }
 
         .market-img {
-            height: 140px;
+            height: 170px;
             background: var(--verify-tint);
             display: flex;
             align-items: center;
@@ -1811,9 +1811,27 @@
         }
 
         .market-img img {
+            position: absolute;
+            inset: 0;
             width: 100%;
-            height: 100%;
-            object-fit: cover
+            height: 100%
+        }
+
+        /* The listing photo is shown WHOLE and centred (object-fit: contain), not as a
+           centred crop — a cover crop of a phone photo cuts the animal off to one side
+           and reads as "off centre". A blurred, scaled copy of the same photo fills the
+           rest of the strip so the card still looks full-bleed. */
+        .market-img .mi-photo {
+            object-fit: contain;
+            object-position: center center
+        }
+
+        .market-img .mi-blur {
+            object-fit: cover;
+            object-position: center center;
+            filter: blur(16px) saturate(1.15);
+            transform: scale(1.2);
+            opacity: .55
         }
 
         .market-badge {
@@ -1850,6 +1868,200 @@
             align-items: center;
             justify-content: space-between;
             margin-top: 10px
+        }
+
+        /* "3 photos" pill on a listing card whose animal has a gallery */
+        .market-photo-count {
+            position: absolute;
+            bottom: 9px;
+            right: 9px;
+            background: rgba(0, 0, 0, 0.55);
+            color: #fff;
+            border-radius: 8px;
+            padding: 3px 8px;
+            font-size: 10.5px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 4px
+        }
+
+        .market-mine-tag {
+            position: absolute;
+            top: 10px;
+            right: 10px
+        }
+
+        /* Photo gallery strip (marketplace detail) */
+        .photo-strip {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding: 2px 0 6px;
+            -webkit-overflow-scrolling: touch
+        }
+
+        .photo-strip::-webkit-scrollbar {
+            display: none
+        }
+
+        .photo-strip-item {
+            flex: 0 0 auto;
+            width: 96px;
+            border-radius: 11px;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            background: var(--paper-raised);
+            cursor: pointer;
+            position: relative
+        }
+
+        .photo-strip-item img {
+            width: 100%;
+            height: 78px;
+            object-fit: cover;
+            display: block
+        }
+
+        .photo-strip-item .psl {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--ink-faint);
+            text-align: center;
+            padding: 4px 2px
+        }
+
+        /* Full-screen photo viewer (mounted inside #app, which is position:relative) */
+        .lightbox {
+            position: absolute;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(0, 0, 0, 0.94);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center
+        }
+
+        .lightbox img {
+            max-width: 96%;
+            max-height: 74%;
+            object-fit: contain;
+            border-radius: 10px
+        }
+
+        .lightbox .lb-bar {
+            position: absolute;
+            top: calc(var(--safe-top) + 10px);
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            color: #fff
+        }
+
+        .lightbox .lb-btn {
+            background: rgba(255, 255, 255, 0.14);
+            border: none;
+            color: #fff;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center
+        }
+
+        .lightbox .lb-caption {
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 12.5px;
+            font-weight: 600;
+            margin-top: 14px;
+            text-align: center
+        }
+
+        .lightbox .lb-nav {
+            position: absolute;
+            bottom: calc(var(--safe-bottom) + 22px);
+            display: flex;
+            gap: 10px;
+            align-items: center
+        }
+
+        /* MY LISTINGS (seller view on the marketplace) */
+        .mylist-item {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 10px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--line);
+            background: var(--paper-raised);
+            margin-bottom: 9px
+        }
+
+        .mylist-thumb {
+            width: 62px;
+            height: 62px;
+            border-radius: 12px;
+            flex-shrink: 0;
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.6);
+            overflow: hidden
+        }
+
+        .mylist-body {
+            flex: 1;
+            min-width: 0
+        }
+
+        .mylist-name {
+            font-size: 13.5px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 5px
+        }
+
+        .mylist-price {
+            font-family: var(--font-display);
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--verify);
+            margin-top: 1px
+        }
+
+        .mylist-meta {
+            font-size: 11.5px;
+            color: var(--ink-faint);
+            margin-top: 2px
+        }
+
+        .mylist-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex-shrink: 0
+        }
+
+        .mylist-actions button {
+            border: 1px solid var(--line);
+            background: var(--paper);
+            color: var(--ink-soft);
+            border-radius: 9px;
+            padding: 6px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            font-family: var(--font-body)
         }
 
         /* CALENDAR */
@@ -2618,6 +2830,15 @@
             position: relative
         }
 
+        /* The animal an enquiry is about, shown as the conversation's avatar */
+        .conv-avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 13px;
+            object-fit: cover;
+            display: block
+        }
+
         .conv-unread-badge {
             position: absolute;
             top: -4px;
@@ -2706,6 +2927,63 @@
             gap: 7px;
             cursor: pointer;
             flex-shrink: 0
+        }
+
+        .chat-animal-chip .cac-thumb {
+            width: 26px;
+            height: 26px;
+            border-radius: 7px;
+            object-fit: cover;
+            display: block;
+            flex-shrink: 0
+        }
+
+        /* "This chat is about …" card pinned under the chat topbar, so buyer and
+           seller both see exactly which listing the enquiry concerns. */
+        .chat-listing-banner {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 9px 14px;
+            background: var(--verify-tint);
+            border-bottom: 1px solid var(--line);
+            cursor: pointer;
+            flex-shrink: 0
+        }
+
+        .chat-listing-banner .clb-thumb {
+            width: 46px;
+            height: 46px;
+            border-radius: 11px;
+            flex-shrink: 0;
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--verify);
+            overflow: hidden
+        }
+
+        .chat-listing-banner .clb-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: .09em;
+            color: var(--ink-faint);
+            font-weight: 700
+        }
+
+        .chat-listing-banner .clb-name {
+            font-size: 13.5px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-top: 1px
+        }
+
+        .chat-listing-banner .clb-sub {
+            font-size: 11.5px;
+            color: var(--ink-soft);
+            margin-top: 1px
         }
 
         .chat-scroll {
@@ -6587,6 +6865,43 @@ var capacitorLocalNotifications = (function (exports, core) {
             </div>
         </div>
 
+        <!-- ===== EDIT MARKETPLACE LISTING ===== -->
+        <div class="screen hidden" id="screen-editlisting">
+            <div class="topbar">
+                <button class="icon-btn" onclick="closeEditListing()"><svg width="18" height="18" viewBox="0 0 24 24"
+                        fill="none">
+                        <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg></button>
+                <p class="eyebrow" style="margin:0;" data-i18n="marketplace_listing">Marketplace listing</p>
+                <div style="width:40px;"></div>
+            </div>
+            <div class="scroll">
+                <h1 style="font-family:var(--font-display);font-size:22px;font-weight:600;margin:4px 0 4px;"
+                    id="el-title">Listing</h1>
+                <p style="color:var(--ink-soft);font-size:13px;margin:0 0 16px;line-height:1.5;" id="el-sub">Buyers see
+                    these photos and this price on the marketplace.</p>
+                <div class="section-label" style="margin-top:0;">
+                    <h3 data-i18n="photos">Photos</h3><span style="font-size:11.5px;color:var(--ink-faint);"
+                        id="el-photo-count"></span>
+                </div>
+                <div class="card" style="padding:13px 15px;" id="el-photos"></div>
+                <div class="section-label">
+                    <h3 data-i18n="price_description">Price &amp; description</h3>
+                </div>
+                <div class="field"><label data-i18n="asking_price_zar">Asking price (ZAR)</label><input type="number"
+                        inputmode="numeric" id="el-price" placeholder="e.g. 15000"></div>
+                <div class="field"><label data-i18n="seller_notes">Seller notes</label><textarea id="el-notes" rows="3"
+                        placeholder="Bloodline, temperament, vaccinations, why you're selling…"></textarea></div>
+                <button class="btn btn-primary" id="el-save" onclick="saveListing()">Save listing</button>
+                <button class="btn btn-ghost" style="margin-top:8px;" onclick="previewListing()">Preview as a buyer
+                    sees it</button>
+                <button class="btn btn-danger-ghost" style="margin-top:8px;" id="el-remove"
+                    onclick="unlistFromEditor()">Remove from marketplace</button>
+                <div style="height:20px;"></div>
+            </div>
+        </div>
+
         <!-- ===== REGISTER ANIMAL ===== -->
         <div class="screen hidden" id="screen-register">
             <div class="topbar"><button class="icon-btn" onclick="go('home')"><svg width="18" height="18"
@@ -6959,6 +7274,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                     <span style="font-size:11px;font-weight:700;color:var(--verify);" data-i18n="view_listing">View listing</span>
                 </div>
             </div>
+            <div class="chat-listing-banner" id="chat-listing-banner" style="display:none;" onclick="openChatAnimal()"></div>
             <div class="chat-scroll" id="chat-scroll"></div>
             <div class="chat-input-bar">
                 <div class="chat-input" id="chat-input" contenteditable="true" placeholder="Type a message…"
@@ -7341,6 +7657,8 @@ var capacitorLocalNotifications = (function (exports, core) {
                     by NG Safeguard verification records. Closest to you first.</p>
                 <button class="btn btn-primary" style="margin-bottom:14px;" onclick="startSellFlow()" data-i18n="sell_one_of_your_animals">Sell one of your
                     animals</button>
+                <!-- Seller's own listings + enquiry counts (renderMyListings) -->
+                <div id="my-listings"></div>
                 <input id="market-search" placeholder="Search breed, name…" oninput="renderMarketplace()"
                     style="width:100%;padding:11px 14px;border-radius:12px;border:1px solid var(--line);background:var(--paper-raised);font-size:14px;color:var(--ink);font-family:var(--font-body);margin-bottom:12px;" data-i18n="search_breed_name" data-i18n-attr="placeholder">
                 <div class="chip-scroll" style="margin-bottom:14px;" id="market-filter-chips"></div>
@@ -7350,7 +7668,7 @@ var capacitorLocalNotifications = (function (exports, core) {
 
         <!-- ===== MARKETPLACE DETAIL ===== -->
         <div class="screen hidden" id="screen-marketdetail">
-            <div class="topbar"><button class="icon-btn" onclick="go('marketplace')"><svg width="18" height="18"
+            <div class="topbar"><button class="icon-btn" onclick="closeMarketDetail()"><svg width="18" height="18"
                         viewBox="0 0 24 24" fill="none">
                         <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                             stroke-linejoin="round" />
@@ -9583,6 +9901,12 @@ var capacitorLocalNotifications = (function (exports, core) {
         let selectedStatus = 'active';
         let marketFilter = 'all';
         let marketListings = []; // public for-sale animals from all sellers (distance-ranked)
+        let marketDetailReturn = 'marketplace'; // 'editlisting' while previewing a draft
+        // animalId → {name,species,breed,salePrice,forSale,photoUrl,photoUrls} for animals a
+        // conversation is about that aren't in `animals` (someone else's listing) — so the
+        // inbox and chat can show WHICH animal an enquiry concerns, with its photo.
+        let convAnimalCache = {};
+        let messagesAnimalFilter = null; // inbox filtered to one listing's enquiries
         let auctions = [];
         let aucLotCount = 0;
         let addEventReturnScreen = 'calendar';
@@ -9604,7 +9928,7 @@ var capacitorLocalNotifications = (function (exports, core) {
         let _savingVetAppt = false;
         let _sendingTransfer = false;
         let _foundGpsCoords = null;
-        const APP_VERSION = '1.8.1';//Bump on EVERY release (APK or OTA). Single source of truth: scripts/ota-publish.mjs reads this exact constant to version the published bundle, and the OTA server compares it to decide if a device needs an update.
+        const APP_VERSION = '1.9.0';//Bump on EVERY release (APK or OTA). Single source of truth: scripts/ota-publish.mjs reads this exact constant to version the published bundle, and the OTA server compares it to decide if a device needs an update.
 
         /* ==============================================================
            i18n — offline, CSP-safe multi-language (EN / isiZulu / Afrikaans).
@@ -10091,6 +10415,19 @@ var capacitorLocalNotifications = (function (exports, core) {
            ============================================================== */
         const RELEASE_NOTES = [
             {
+                version: '1.9.0',
+                date: '2026-07-28',
+                headline: 'Photos on the marketplace, and a real listing editor',
+                mandatory: false,
+                items: [
+                    { icon: 'market', title: 'Listings finally show their photos', body: 'Marketplace cards show the animal\'s actual photo instead of a species icon — the whole picture, centred, nothing cropped off. Open a listing and every photo is there in a strip you can tap through full-screen.' },
+                    { icon: 'market', title: 'See what you have on the market', body: 'The Marketplace now opens with Your listings: each animal\'s photo, asking price, photo count and how many buyers have enquired, with unread messages highlighted.' },
+                    { icon: 'photo', title: 'A proper listing editor', body: 'Add to marketplace opens a real editor — set the cover photo from the camera or your gallery, the asking price and seller notes, then preview it exactly as a buyer sees it. It prompts you when a listing has no photo or no price.' },
+                    { icon: 'chat', title: 'Enquiries say which animal they are about', body: 'Every conversation shows the animal\'s photo, name and asking price — in your inbox and pinned inside the chat — for buyer and seller alike. Tap Enquiries on a listing to see only the buyers asking about that animal.' },
+                    { icon: 'photo', title: 'Photos stuck on your phone now reach buyers', body: 'A photo that never made it to the cloud (taken offline, or before photo storage was fixed) is flagged in the listing editor and uploaded when you save, so buyers can finally see it.' },
+                ]
+            },
+            {
                 version: '1.8.1',
                 date: '2026-07-27',
                 headline: 'Four more languages: isiXhosa, chiShona, Kiswahili',
@@ -10139,7 +10476,10 @@ var capacitorLocalNotifications = (function (exports, core) {
                 nfc: '<path d="M5 13a7 7 0 0114 0M8 16a4 4 0 018 0M11.5 19a.5.5 0 11.001-1.001A.5.5 0 0111.5 19z"/>',
                 scan: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M17 17h3M14 20h3"/>',
                 pin: '<path d="M12 21s-7-6.5-7-11a7 7 0 0114 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',
-                lang: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/>'
+                lang: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/>',
+                market: '<path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18M16 10a4 4 0 01-8 0"/>',
+                photo: '<circle cx="12" cy="12" r="3.5"/><path d="M20 7h-2.4l-1.6-2H8L6.4 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/>',
+                chat: '<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"/>'
             };
             return `<div style="display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line-soft);">
                 <div style="width:34px;height:34px;border-radius:10px;background:var(--verify-tint);display:flex;align-items:center;justify-content:center;color:var(--verify);flex-shrink:0;">${I(icons[it.icon] || icons.nfc, 17)}</div>
@@ -10552,6 +10892,11 @@ var capacitorLocalNotifications = (function (exports, core) {
                 if (r) r.style.display = 'none';
             }
 
+            // A single-listing inbox filter survives a trip into a chat and back, but is
+            // dropped when the inbox is entered from anywhere else.
+            const fromScreen = document.querySelector('.screen:not(.hidden)')?.id?.replace('screen-', '');
+            if (screen === 'messages' && fromScreen !== 'chat') messagesAnimalFilter = null;
+
             document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
             const target = document.getElementById('screen-' + screen);
             if (!target) { console.warn('Screen not found:', screen); return; }
@@ -10570,7 +10915,7 @@ var capacitorLocalNotifications = (function (exports, core) {
 
             if (screen === 'home') renderHome();
             if (screen === 'notifications') { renderNotifications(); loadIncomingTransfers().then(() => { renderNotifications(); updateBadges(); }); }
-            if (screen === 'messages') renderMessages();
+            if (screen === 'messages') { renderMessages(); loadConversationAnimals().then(renderMessages); }
             if (screen === 'account') renderAccount();
             if (screen === 'marketplace') { loadMarketListings().then(() => { isGuest ? renderGuestMarket() : renderMarketplace(); }); }
             if (screen === 'calendar') renderCalendar();
@@ -11268,7 +11613,55 @@ var capacitorLocalNotifications = (function (exports, core) {
             const url = p => (p && (p.public_url || p.thumbnail_url)) || null;
             return url(photos.find(p => p.photo_type === 'profile'))
                 || url(photos.find(p => p.photo_type === 'face'))
-                || url(photos.find(p => url(p)));
+                // Never fall back to a 'document' row — those are scanned papers, not
+                // pictures of the animal, and must not become a public cover image.
+                || url(photos.find(p => p.photo_type !== 'document' && url(p)));
+        }
+
+        // Human labels for the animal_photos.photo_type values, used by the galleries.
+        const PHOTO_TYPE_LABELS = {
+            profile: 'Profile', face: 'Face', nose: 'Nose',
+            left_side: 'Left side', right_side: 'Right side', full_body: 'Full body'
+        };
+        const PHOTO_TYPE_ORDER = ['profile', 'face', 'left_side', 'right_side', 'full_body', 'nose'];
+
+        // An animal_photos[] embed → an ordered, de-duplicated [{url,label}] gallery
+        // (cover shot first) so a listing can show every photo the animal has, not one.
+        function buildPhotoGallery(rows) {
+            const rank = t => { const i = PHOTO_TYPE_ORDER.indexOf(t); return i < 0 ? 99 : i; };
+            const out = [];
+            // 'document' rows are scanned papers (vet reports, registration certificates)
+            // — they share this table but are never part of the animal's photo gallery.
+            (rows || []).filter(p => p.photo_type !== 'document')
+                .sort((x, y) => rank(x.photo_type) - rank(y.photo_type)).forEach(p => {
+                const u = p.public_url || p.thumbnail_url;
+                if (u && !out.some(o => o.url === u)) out.push({ url: u, label: PHOTO_TYPE_LABELS[p.photo_type] || 'Photo' });
+            });
+            return out;
+        }
+
+        // Every photo an animal has as [{url,label}]. Handles BOTH shapes in play: a
+        // marketplace listing (photoUrls, built above) and a locally-loaded animal
+        // (photos.{profile,faceUrl,noseUrl,left,right,body}). De-dupes by URL.
+        function animalPhotoGallery(a) {
+            if (!a) return [];
+            const out = [];
+            const push = (url, label) => { if (url && !out.some(p => p.url === url)) out.push({ url, label }); };
+            (a.photoUrls || []).forEach(p => push(p.url, p.label));
+            const ph = a.photos || {};
+            push(ph.profile, 'Profile');
+            push(ph.faceUrl, 'Face');
+            push(ph.left, 'Left side');
+            push(ph.right, 'Right side');
+            push(ph.body, 'Full body');
+            push(ph.noseUrl, 'Nose');
+            push(a.photoUrl, 'Photo');
+            return out;
+        }
+
+        // The single best cover image for an animal/listing, or null for the icon fallback.
+        function animalCoverPhoto(a) {
+            return a ? (a.photoUrl || animalPhotoGallery(a)[0]?.url || null) : null;
         }
 
         async function loadMarketListings() {
@@ -11286,15 +11679,32 @@ var capacitorLocalNotifications = (function (exports, core) {
                 try {
                     data = await sbFetch(`animals?for_sale=eq.true&is_deleted=eq.false&select=${select}&limit=200`);
                 } catch (colErr) {
-                    // animal_photos embed / gps columns unavailable — degrade to a bare card.
+                    // A single unavailable column used to cost EVERY listing its photos,
+                    // silently. Fall back to the guaranteed columns, then fetch the photos
+                    // in their own query and graft them on.
+                    console.warn('Market select failed, retrying without optional columns:', colErr);
                     const bare = `id,name,species,breed,gender,date_of_birth,sale_price,sale_notes,owner_id,bg_gradient,trust_score`;
                     data = await sbFetch(`animals?for_sale=eq.true&is_deleted=eq.false&select=${bare}&limit=200`);
+                    try {
+                        const ids = (data || []).map(a => a.id).filter(Boolean);
+                        if (ids.length) {
+                            const photoRows = await sbFetch(
+                                `animal_photos?animal_id=in.(${ids.join(',')})&select=animal_id,public_url,thumbnail_url,photo_type`
+                            );
+                            const byAnimal = {};
+                            (photoRows || []).forEach(p => (byAnimal[p.animal_id] = byAnimal[p.animal_id] || []).push(p));
+                            data.forEach(a => { a.animal_photos = byAnimal[a.id] || []; });
+                        }
+                    } catch (photoErr) {
+                        console.warn('Market photo fallback failed — cards will show icons:', photoErr);
+                    }
                 }
                 // Resolve the sellers' real names in one batched RPC call (users is self-only
                 // RLS, so we can't read them directly). Falls back to 'Seller' if unresolved.
                 const sellerProfiles = await resolvePublicProfiles((data || []).map(a => a.owner_id));
                 marketListings = (data || []).map(a => {
                     const photo = pickAnimalPhotoUrl(a.animal_photos);
+                    const gallery = buildPhotoGallery(a.animal_photos);
                     const hasFace = (a.animal_photos || []).some(p => p.photo_type === 'face');
                     const hasNose = (a.animal_photos || []).some(p => p.photo_type === 'nose');
                     const listing = {
@@ -11304,6 +11714,8 @@ var capacitorLocalNotifications = (function (exports, core) {
                         nfcUid: a.nfc_uid || null,
                         sire: a.sire_name || null, dam: a.dam_name || null, vetContact: a.vet_contact || null,
                         photoUrl: photo,
+                        // Every photo the seller uploaded, so cards/detail show a gallery.
+                        photoUrls: gallery,
                         photos: { faceUrl: photo, face: hasFace, nose: hasNose },
                         // biometric_verified_at → per-mode flags so a verified seller listing earns
                         // the full biometric trust points, mirroring the owner-side calculation.
@@ -11321,6 +11733,16 @@ var capacitorLocalNotifications = (function (exports, core) {
                     // updated (always 0), so reading it would show every listing as 0/100.
                     listing.trustScore = calcTrustScore(listing).score;
                     return listing;
+                });
+                // My own listings: if the server row carries no photo yet (upload still
+                // pending, or the photo only ever reached this device) fall back to the
+                // local copy, so a seller is never shown a blank card for their own animal.
+                marketListings.forEach(l => {
+                    if (currentUser.id && l.sellerId && l.sellerId !== currentUser.id) return;
+                    const local = animals.find(x => x.id === l.id);
+                    if (!local) return;
+                    if (!l.photoUrl) l.photoUrl = animalCoverPhoto(local);
+                    if (!l.photoUrls || !l.photoUrls.length) l.photoUrls = animalPhotoGallery(local);
                 });
             } catch (e) {
                 console.warn('Could not load market listings:', e);
@@ -11561,11 +11983,61 @@ var capacitorLocalNotifications = (function (exports, core) {
                         if (!c.otherName) c.otherName = p?.name || (c.otherRole || 'Contact');
                         if (!c.otherRole && p?.role) c.otherRole = p.role;
                     });
+                    // Resolve the animals the enquiries are about (incl. other people's
+                    // listings) so the inbox can show each one with its photo and price.
+                    await loadConversationAnimals();
                 }
             } catch (e) {
                 console.warn('Conversations load failed:', e);
             }
         }
+
+        // The animal a conversation is about, from whichever store holds it: my own
+        // registry, the live marketplace, a vet client's animal, or the cache filled by
+        // loadConversationAnimals(). Returns null for a general (non-listing) chat.
+        function conversationAnimal(c) {
+            if (!c || !c.animalId) return null;
+            return animals.find(x => x.id === c.animalId)
+                || marketListings.find(x => x.id === c.animalId)
+                || vetClientAnimals.find(x => x.id === c.animalId)
+                || convAnimalCache[c.animalId]
+                || null;
+        }
+
+        // Fetch the animals behind conversations we can't resolve locally (a buyer's
+        // enquiry is about someone ELSE's animal, which never enters `animals`). RLS
+        // exposes for-sale animals, so this normally succeeds; when it doesn't, the UI
+        // just falls back to the stored subject name + species icon.
+        async function loadConversationAnimals() {
+            if (!currentUser.id) return;
+            const missing = [...new Set(conversations
+                .map(c => c.animalId)
+                .filter(id => id && isServerUuid(id) && !conversationAnimal({ animalId: id })))];
+            if (!missing.length) return;
+            try {
+                const rows = await sbFetch(
+                    `animals?id=in.(${missing.join(',')})&select=id,name,species,breed,gender,date_of_birth,`
+                    + `sale_price,for_sale,bg_gradient,animal_photos(public_url,thumbnail_url,photo_type)`
+                );
+                (rows || []).forEach(r => {
+                    convAnimalCache[r.id] = {
+                        id: r.id, name: r.name, species: r.species, breed: r.breed, gender: r.gender,
+                        dob: r.date_of_birth, salePrice: r.sale_price, forSale: !!r.for_sale,
+                        bgGradient: r.bg_gradient || null,
+                        photoUrl: pickAnimalPhotoUrl(r.animal_photos),
+                        photoUrls: buildPhotoGallery(r.animal_photos)
+                    };
+                });
+                // Fill in names the conversation row only knew as a subject string.
+                conversations.forEach(c => {
+                    const a = convAnimalCache[c.animalId];
+                    if (a?.name) c.animalName = a.name;
+                });
+            } catch (e) {
+                console.warn('Conversation animals load failed:', e);
+            }
+        }
+        window.loadConversationAnimals = loadConversationAnimals;
 
         function seedVetData() {
         }
@@ -12774,11 +13246,8 @@ var capacitorLocalNotifications = (function (exports, core) {
             el.innerHTML = allForSale.map(a => {
                 const score = a.trustScore !== undefined ? a.trustScore : (a.vaccinations ? calcTrustScore(a).score : 0);
                 const age = a.dob ? calcAge(a.dob) : '—';
-                return `<div class="market-card" onclick="openGuestListingDetail('${a.id}')">
-                    <div class="market-img" style="background:${a.bgGradient || 'var(--verify-tint)'};position:relative;">
-                        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.5);">${speciesIcon(a.species, 56)}</div>
-                        <div class="market-badge">${a.blueTickVerified ? `<span class="badge verified" style="background:rgba(255,255,255,0.92);">${blueTick(13)} Verified</span>` : `<span class="badge grey" style="background:rgba(255,255,255,0.85);">Unverified</span>`}</div>
-                    </div>
+                return `<div class="market-card" onclick="openGuestListingDetail('${jsAttr(a.id)}')">
+                    ${marketCardMediaHtml(a)}
                     <div class="market-body">
                         <div class="mname">${esc(a.name)}${a.blueTickVerified ? ` ${blueTick(13)}` : ''}</div>
                         <div class="mbreed">${esc(a.breed)} · ${esc(a.gender)} · ${age}</div>
@@ -12986,7 +13455,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                         </div>
                         <div class="id-card-content">
                             <div class="id-card-top"><div class="id-card-brand">Marketplace Listing</div><div class="chip-icon"></div></div>
-                            <div class="id-photo">${(a.photos?.faceUrl || a.photoUrl) ? `<img src="${esc(a.photos?.faceUrl || a.photoUrl)}" alt="${esc(a.name)}">` : speciesIcon(a.species, 30)}</div>
+                            <div class="id-photo" onclick="openAnimalPhotoViewer('${jsAttr(a.id)}',0)">${(a.photos?.faceUrl || a.photoUrl) ? `<img src="${esc(a.photos?.faceUrl || a.photoUrl)}" alt="${esc(a.name)}">` : speciesIcon(a.species, 30)}</div>
                             <h2>${esc(a.name)}</h2>
                             <div class="breed">${esc(a.breed)} · ${esc(a.gender)} · ${calcAge(a.dob)}</div>
                             <div class="id-grid">
@@ -12998,6 +13467,8 @@ var capacitorLocalNotifications = (function (exports, core) {
                         </div>
                     </div>
                 </div>
+
+                ${photoStripHtml(a)}
 
                 ${a.saleNotes ? `
                 <div class="card" style="padding:13px 15px;margin:12px 0 4px;">
@@ -15903,11 +16374,14 @@ var capacitorLocalNotifications = (function (exports, core) {
           <span class="badge ${a.forSale ? 'gold' : 'grey'}">${a.forSale ? 'Listed' : 'Not listed'}</span>
         </div>
         ${a.forSale
-                ? `<div style="display:flex;gap:8px;margin-top:10px;">
-             <button class="btn btn-ghost" style="padding:10px;flex:1;" onclick="go('marketplace')">${I('<path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>', 15)} View listing</button>
-             <button class="btn btn-danger-ghost" style="padding:10px;flex:1;" onclick="unlistAnimal('${a.id}')">${I('<path d="M18 6L6 18M6 6l12 12"/>', 15)} Remove listing</button>
+                ? `<div style="font-size:11.5px;color:${animalCoverPhoto(a) ? 'var(--ink-faint)' : '#8A5A12'};margin-top:6px;">${animalCoverPhoto(a)
+                    ? `${animalPhotoGallery(a).length} photo${animalPhotoGallery(a).length > 1 ? 's' : ''} on this listing`
+                    : 'No photo on this listing — buyers scroll past those'}</div>
+           <div style="display:flex;gap:8px;margin-top:10px;">
+             <button class="btn btn-ghost" style="padding:10px;flex:1;" onclick="openEditListing('${jsAttr(a.id)}',{from:'animal'})">${I('<path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>', 15)} Edit listing</button>
+             <button class="btn btn-danger-ghost" style="padding:10px;flex:1;" onclick="unlistAnimal('${jsAttr(a.id)}')">${I('<path d="M18 6L6 18M6 6l12 12"/>', 15)} Remove listing</button>
            </div>`
-                : `<button class="btn btn-ghost" style="margin-top:10px;padding:10px;" onclick="listAnimal('${a.id}')">${I('<path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>', 15)} Add to marketplace</button>`}
+                : `<button class="btn btn-ghost" style="margin-top:10px;padding:10px;" onclick="listAnimal('${jsAttr(a.id)}',{from:'animal'})">${I('<path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>', 15)} Add to marketplace</button>`}
       </div>
       <div class="section-label"><h3>Documents &amp; certificates</h3></div>
       <div class="card" style="padding:12px 15px;cursor:pointer;" onclick="go('documents')"><div style="display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:9px;">${I('<path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><path d="M14 2v6h6"/>', 17)}<span style="font-size:13px;font-weight:600;">Documents</span></div>${I('<path d="M9 18l6-6-6-6"/>', 14)}</div></div>
@@ -16056,21 +16530,193 @@ var capacitorLocalNotifications = (function (exports, core) {
             }
         }
 
-        async function listAnimal(id) {
+        /* ==============================================================
+           MARKETPLACE LISTING EDITOR
+           Listing used to be a bare price prompt() with no way to see or fix the
+           photos buyers actually get. This screen is the single place to set the
+           cover photo, price and notes — for a new listing and for editing a live
+           one.
+           ============================================================== */
+        let listingEditId = null;
+        let listingEditIsNew = false;
+        let listingEditorReturn = 'animal';
+        // Unsaved {id,price,notes} kept alive across a "preview as a buyer" round trip.
+        let listingDraft = null;
+
+        function openEditListing(id, opts = {}) {
             const a = animals.find(x => x.id === id);
+            if (!a) { toast('Open one of your own animals to list it'); return; }
+            listingEditId = id;
+            listingEditIsNew = !a.forSale;
+            listingEditorReturn = opts.from || (!document.getElementById('screen-marketplace')?.classList.contains('hidden') ? 'marketplace' : 'animal');
+            // The camera/gallery helpers save against currentAnimalId.
+            currentAnimalId = id;
+            const t = document.getElementById('el-title');
+            const sub = document.getElementById('el-sub');
+            if (t) t.textContent = listingEditIsNew ? `List ${a.name} for sale` : `${a.name}'s listing`;
+            if (sub) sub.textContent = listingEditIsNew
+                ? 'Add a clear photo and an asking price — listings with photos get far more enquiries.'
+                : 'Buyers see these photos and this price on the marketplace.';
+            const price = document.getElementById('el-price');
+            const notes = document.getElementById('el-notes');
+            // Restore an in-flight edit (returning from "preview as a buyer"); otherwise
+            // start from what is actually saved on the animal.
+            const draft = listingDraft && listingDraft.id === id ? listingDraft : null;
+            if (price) price.value = draft ? draft.price : (a.salePrice || '');
+            if (notes) notes.value = draft ? draft.notes : (a.saleNotes || '');
+            if (!draft) listingDraft = null;
+            const saveBtn = document.getElementById('el-save');
+            if (saveBtn) saveBtn.textContent = listingEditIsNew ? 'Publish to marketplace' : 'Save changes';
+            const rm = document.getElementById('el-remove');
+            // '' (not 'block') so the stylesheet's flex layout is restored, not overridden.
+            if (rm) rm.style.display = a.forSale ? '' : 'none';
+            renderEditListingPhotos();
+            go('editlisting');
+        }
+        window.openEditListing = openEditListing;
+
+        // The photo card inside the editor. Repainted on its own after a capture so
+        // the price/notes the user already typed are never wiped.
+        function renderEditListingPhotos() {
+            const box = document.getElementById('el-photos');
+            const a = animals.find(x => x.id === listingEditId);
+            if (!box || !a) return;
+            const gallery = animalPhotoGallery(a);
+            const cover = animalCoverPhoto(a);
+            const countEl = document.getElementById('el-photo-count');
+            if (countEl) countEl.textContent = gallery.length ? `${gallery.length} photo${gallery.length > 1 ? 's' : ''}` : 'None yet';
+            // A photo held only as a local data: URL never reached the cloud, so buyers
+            // cannot see it — say so plainly and offer to push it up.
+            const pending = gallery.filter(p => p.url.startsWith('data:')).length;
+            box.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="avatar" style="width:62px;height:62px;border-radius:12px;overflow:hidden;flex-shrink:0;${cover ? `background-image:url('${cssUrl(cover)}');background-size:cover;background-position:center;` : ''}">${cover ? '' : speciesIcon(a.species, 26)}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13.5px;font-weight:600;">${cover ? 'Cover photo' : 'No cover photo yet'}</div>
+          <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px;line-height:1.45;">${cover
+                ? 'This is the picture buyers see first on the marketplace.'
+                : 'Listings without a photo are usually scrolled past. Add one now.'}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-ghost" style="padding:9px;flex:1;" onclick="listingPhoto('camera')">${I('<circle cx="12" cy="12" r="3.5"/><path d="M20 7h-2.4l-1.6-2H8L6.4 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/>', 15)} ${cover ? 'Replace photo' : 'Take photo'}</button>
+        <button class="btn btn-ghost" style="padding:9px;flex:1;" onclick="listingPhoto('gallery')">${I('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>', 15)} From gallery</button>
+      </div>
+      ${gallery.length ? `<div class="photo-strip" style="margin-top:12px;">
+        ${gallery.map((p, i) => `<div class="photo-strip-item" onclick="openAnimalPhotoViewer('${jsAttr(a.id)}',${i})">
+          <img src="${esc(p.url)}" alt="${esc(p.label)}" loading="lazy">
+          <div class="psl">${esc(p.label)}</div>
+        </div>`).join('')}
+      </div>` : ''}
+      ${pending ? `<div style="margin-top:10px;font-size:11.5px;color:#8A5A12;line-height:1.5;">${pending} photo${pending > 1 ? 's are' : ' is'} still only on this device — saving the listing uploads ${pending > 1 ? 'them' : 'it'} so buyers can see ${pending > 1 ? 'them' : 'it'}.</div>` : ''}
+      <div style="margin-top:10px;font-size:11.5px;color:var(--ink-faint);line-height:1.5;">Face, nose and side photos taken on the animal's profile also show in this gallery.</div>`;
+        }
+        window.renderEditListingPhotos = renderEditListingPhotos;
+
+        function listingPhoto(source) {
+            currentCameraMode = 'profile';
+            if (source === 'gallery') openGallery();
+            else openCamera('profile');
+        }
+        window.listingPhoto = listingPhoto;
+
+        // Re-upload photos that only ever made it to the device (captured offline, or
+        // before the storage buckets existed) — until they're in storage, no buyer can
+        // see them no matter what the card renders.
+        async function syncLocalPhotos(a) {
+            if (!a || !currentUser.id || !currentUser.accessToken || !isServerUuid(a.id)) return 0;
+            const isLocal = u => typeof u === 'string' && u.startsWith('data:');
+            const jobs = [
+                ['profile', a.photos?.profile || (isLocal(a.photoUrl) ? a.photoUrl : null)],
+                ['face', a.photos?.faceUrl], ['nose', a.photos?.noseUrl],
+                ['left', a.photos?.left], ['right', a.photos?.right], ['body', a.photos?.body],
+            ];
+            let n = 0;
+            for (const [mode, url] of jobs) {
+                if (!isLocal(url)) continue;
+                try { if (await saveCapturedPhoto(url, mode, a.id)) n++; } catch (e) { console.warn('Photo re-upload failed:', mode, e); }
+            }
+            return n;
+        }
+
+        async function saveListing() {
+            const a = animals.find(x => x.id === listingEditId);
             if (!a) return;
-            const price = prompt('Asking price (ZAR):', a.salePrice || '15000');
-            if (!price) return;
+            const price = parseInt(document.getElementById('el-price')?.value, 10);
+            if (!price || price <= 0) { toast('Enter an asking price first'); document.getElementById('el-price')?.focus(); return; }
+            const notes = document.getElementById('el-notes')?.value.trim();
+            if (!animalCoverPhoto(a) && !window.confirm(`${a.name} has no photo yet. Listings without a photo get very few enquiries — publish anyway?`)) return;
+            const wasListed = a.forSale;
             a.forSale = true;
-            a.salePrice = parseInt(price) || 15000;
-            a.saleNotes = a.saleNotes || 'Listed for sale.';
+            a.salePrice = price;
+            a.saleNotes = notes || a.saleNotes || null;
             await saveData('animals', animals);
             await persistListingState(a);
-            await pushAnimalHistory(a, 'auction', 'Listed on marketplace', `Asking R ${a.salePrice.toLocaleString()}`);
-            toast(`${a.name} listed in marketplace`);
-            renderAnimal(id);
+            // Push any device-only photos to storage so the listing actually carries them.
+            const uploaded = await syncLocalPhotos(a);
+            if (uploaded) await saveData('animals', animals);
+            if (!wasListed) {
+                await pushAnimalHistory(a, 'auction', 'Listed on marketplace', `Asking R ${price.toLocaleString()}`);
+            }
+            listingDraft = null;
+            toast(wasListed ? `${a.name}'s listing updated` : `${a.name} is now on the marketplace`);
+            renderAnimal(a.id);
+            closeEditListing();
+            refreshMarketplaceIfVisible();
+        }
+        window.saveListing = saveListing;
+
+        // Show the seller exactly what a buyer sees, WITHOUT committing the edit: the
+        // typed price/notes ride along as a preview object and are restored when the
+        // editor reopens, so previewing never costs you what you just typed.
+        function previewListing() {
+            const a = animals.find(x => x.id === listingEditId);
+            if (!a) return;
+            listingDraft = {
+                id: a.id,
+                price: document.getElementById('el-price')?.value ?? '',
+                notes: document.getElementById('el-notes')?.value ?? ''
+            };
+            marketDetailReturn = 'editlisting';
+            openMarketDetail(a.id, {
+                ...a,
+                forSale: true,
+                salePrice: parseInt(listingDraft.price, 10) || a.salePrice || 0,
+                saleNotes: listingDraft.notes || a.saleNotes
+            });
+        }
+        window.previewListing = previewListing;
+
+        async function unlistFromEditor() {
+            const id = listingEditId;
+            await unlistAnimal(id);
+            const a = animals.find(x => x.id === id);
+            if (a && !a.forSale) closeEditListing();
+        }
+        window.unlistFromEditor = unlistFromEditor;
+
+        function closeEditListing() {
+            listingDraft = null;
+            const back = listingEditorReturn === 'marketplace' ? 'marketplace' : 'animal';
+            go(back);
+            if (back === 'marketplace') refreshMarketplaceIfVisible();
+        }
+        window.closeEditListing = closeEditListing;
+
+        // Entry point from the animal profile / marketplace — always the full editor now,
+        // so the seller sets the photo and the price together.
+        function listAnimal(id, opts) {
+            openEditListing(id, opts);
         }
         window.listAnimal = listAnimal;
+
+        // Repaint the marketplace (public list + "Your listings") when a listing changes
+        // while that screen is the one on top — otherwise it silently shows stale rows.
+        function refreshMarketplaceIfVisible() {
+            const onMarket = !document.getElementById('screen-marketplace')?.classList.contains('hidden');
+            if (!onMarket) return;
+            loadMarketListings().then(renderMarketplace).catch(() => renderMarketplace());
+        }
 
         // Fix 9: revoke a marketplace listing. There was no counterpart to listAnimal, so
         // once listed you could only bury it by editing. This clears for_sale and removes
@@ -16088,6 +16734,7 @@ var capacitorLocalNotifications = (function (exports, core) {
             marketListings = marketListings.filter(m => m.id !== id);
             toast(`${a.name} removed from marketplace`);
             renderAnimal(id);
+            refreshMarketplaceIfVisible();
         }
         window.unlistAnimal = unlistAnimal;
 
@@ -17245,16 +17892,39 @@ var capacitorLocalNotifications = (function (exports, core) {
             const list = document.getElementById('messages-list');
             if (!list) return;
             if (!conversations.length) {
+                messagesAnimalFilter = null;
                 list.innerHTML = `<div class="empty"><div class="ei">${I('<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"/>', 40)}</div><div class="et">No messages yet</div><div class="es">When buyers enquire about your listings, conversations will appear here.</div></div>`;
                 return;
             }
-            list.innerHTML = conversations.map(c => {
-                const a = animals.find(x => x.id === c.animalId);
-                return `<div class="conv-item" onclick="openChat('${c.id}')">
-      <div class="conv-avatar">${speciesIcon(a?.species || 'dog', 22)}${c.unreadCount > 0 ? `<div class="conv-unread-badge">${c.unreadCount}</div>` : ''}</div>
+            // Optional single-listing view (arrived from "Enquiries" on a listing).
+            const shown = messagesAnimalFilter
+                ? conversations.filter(c => c.animalId === messagesAnimalFilter)
+                : conversations;
+            const filterName = messagesAnimalFilter
+                ? (conversationAnimal({ animalId: messagesAnimalFilter })?.name
+                    || shown[0]?.animalName || 'this listing')
+                : '';
+            const filterBar = messagesAnimalFilter
+                ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;background:var(--verify-tint);border-bottom:1px solid var(--line);">
+             <div style="font-size:12px;color:var(--ink-soft);">Enquiries about <b>${esc(filterName)}</b></div>
+             <span class="link" style="font-size:12px;" onclick="clearMessagesFilter()">Show all</span>
+           </div>`
+                : '';
+            list.innerHTML = filterBar + shown.map(c => {
+                const a = conversationAnimal(c);
+                const cover = animalCoverPhoto(a);
+                // Whose listing is it? Drives the wording so both sides know their side
+                // of the enquiry at a glance.
+                const iAmSeller = !!(c.sellerId && c.sellerId === currentUser.id);
+                const price = a?.salePrice ? ` · R ${Number(a.salePrice).toLocaleString()}` : '';
+                const ctxLine = c.animalId
+                    ? `<div style="font-size:11px;color:var(--verify);font-weight:600;margin-bottom:2px;">${iAmSeller ? 'Enquiry on' : 'About'} ${esc(a?.name || c.animalName)}${price}</div>`
+                    : `<div style="font-size:11px;color:var(--ink-faint);font-weight:600;margin-bottom:2px;">Direct message</div>`;
+                return `<div class="conv-item" onclick="openChat('${jsAttr(c.id)}')">
+      <div class="conv-avatar">${cover ? `<img src="${esc(cover)}" alt="${esc(a?.name || '')}" loading="lazy" onerror="this.remove()">` : speciesIcon(a?.species || 'dog', 22)}${c.unreadCount > 0 ? `<div class="conv-unread-badge">${c.unreadCount}</div>` : ''}</div>
       <div class="conv-body">
         <div class="conv-name">${esc(c.otherName)} <span style="font-size:11px;color:var(--ink-faint);font-weight:400;">· ${esc(c.otherRole)}</span></div>
-        <div style="font-size:11px;color:var(--verify);font-weight:600;margin-bottom:2px;">${esc(c.animalName)}</div>
+        ${ctxLine}
         <div class="conv-preview">${esc(c.lastMessage)}</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
@@ -17263,21 +17933,56 @@ var capacitorLocalNotifications = (function (exports, core) {
       </div>
     </div>`;
             }).join('');
+            if (messagesAnimalFilter && !shown.length) {
+                list.innerHTML = filterBar + `<div class="empty"><div class="et">No enquiries yet</div><div class="es">Nobody has messaged you about ${esc(filterName)} yet.</div></div>`;
+            }
         }
         window.renderMessages = renderMessages;
+
+        function clearMessagesFilter() {
+            messagesAnimalFilter = null;
+            renderMessages();
+        }
+        window.clearMessagesFilter = clearMessagesFilter;
+
+        // The card pinned under the chat topbar naming the animal this conversation is
+        // about. Both sides see it — the seller reads "Enquiry on your listing", the
+        // buyer reads "You enquired about" — with the animal's photo and asking price.
+        function paintChatListingBanner(c, a) {
+            const bar = document.getElementById('chat-listing-banner');
+            if (!bar) return;
+            if (!c || !c.animalId) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+            const name = a?.name || c.animalName || 'Animal';
+            const cover = animalCoverPhoto(a);
+            const iAmSeller = !!(c.sellerId && c.sellerId === currentUser.id);
+            const label = c.context === 'marketplace' || a?.forSale
+                ? (iAmSeller ? 'Enquiry on your listing' : 'You enquired about')
+                : 'This chat is about';
+            const bits = [a?.breed, a?.gender, a?.dob ? calcAge(a.dob) : null].filter(Boolean).join(' · ');
+            const price = a?.salePrice ? `R ${Number(a.salePrice).toLocaleString()}` : '';
+            bar.style.display = 'flex';
+            bar.innerHTML = `
+      <div class="clb-thumb" style="${cover ? `background-image:url('${cssUrl(cover)}');` : `background:${a?.bgGradient || 'var(--verify-tint)'};`}">${cover ? '' : speciesIcon(a?.species || 'dog', 22)}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="clb-label">${label}</div>
+        <div class="clb-name">${esc(name)}${price ? ` · <span style="color:var(--verify);">${price}</span>` : ''}</div>
+        ${bits ? `<div class="clb-sub">${esc(bits)}</div>` : ''}
+      </div>
+      <span style="font-size:11.5px;font-weight:700;color:var(--verify);flex-shrink:0;">View ›</span>`;
+        }
 
         function openChat(convId) {
             currentConvId = convId;
             const c = conversations.find(x => x.id === convId);
             if (!c) return;
-            const a = animals.find(x => x.id === c.animalId) || vetClientAnimals.find(x => x.id === c.animalId);
+            const a = conversationAnimal(c);
             const isDirect = !c.animalId || c.context === 'general';
             c.unreadCount = 0;
             c.messages.forEach(m => m.read = true);
             markConversationRead(c);
             document.getElementById('chat-animal-name').textContent = isDirect
                 ? (c.otherName || 'Direct message')
-                : c.animalName + (a?.forSale ? ` — R${(a.salePrice || 0).toLocaleString()}` : '');
+                : (a?.name || c.animalName) + (a?.salePrice ? ` — R${Number(a.salePrice).toLocaleString()}` : '');
             document.getElementById('chat-other-party').textContent = c.otherName + (c.otherRole ? ' · ' + c.otherRole : '');
             // The "Re: listing" label + "View listing" chip only make sense for marketplace chats.
             const ctxLabel = document.querySelector('#screen-chat .ctx-label');
@@ -17285,8 +17990,21 @@ var capacitorLocalNotifications = (function (exports, core) {
             const animalChip = document.querySelector('#screen-chat .chat-animal-chip');
             if (animalChip) animalChip.style.display = (!isDirect && c.animalId) ? 'flex' : 'none';
             const icon = document.getElementById('chat-animal-icon');
-            if (icon) icon.innerHTML = speciesIcon(a?.species || 'dog', 18);
+            const chipCover = animalCoverPhoto(a);
+            if (icon) icon.innerHTML = chipCover
+                ? `<img class="cac-thumb" src="${esc(chipCover)}" alt="${esc(a?.name || '')}" onerror="this.replaceWith(document.createTextNode(''))">`
+                : speciesIcon(a?.species || 'dog', 18);
+            paintChatListingBanner(c, a);
             renderChatMessages(c);
+            // A conversation opened before its animal was cached (deep link, fresh login)
+            // still resolves — refresh the header once the fetch lands.
+            if (c.animalId && !a) {
+                loadConversationAnimals().then(() => {
+                    if (currentConvId !== convId) return;
+                    const resolved = conversationAnimal(c);
+                    if (resolved) openChat(convId);
+                });
+            }
             // Pull the latest messages immediately, then keep polling while the chat is open.
             refreshOpenChat();
             startChatPolling();
@@ -17546,7 +18264,16 @@ var capacitorLocalNotifications = (function (exports, core) {
             let sellerName = a.owner && a.owner !== 'Seller' ? a.owner : null;
             if (!sellerName) sellerName = (await resolveOneProfile(sellerId))?.name || 'Seller';
             toast('Opening chat…');
-            openDirectChat(sellerId, sellerName, 'Seller', { animalId: id, animalName: a.name, context: 'marketplace' });
+            await openDirectChat(sellerId, sellerName, 'Seller', { animalId: id, animalName: a.name, context: 'marketplace' });
+            // Seed a first message naming the animal so the seller knows which listing
+            // this is about the moment it lands. Editable — nothing is sent until the
+            // buyer taps send.
+            const c = conversations.find(x => x.id === currentConvId);
+            const input = document.getElementById('chat-input');
+            if (input && c && !c.messages.length && !input.innerText.trim()) {
+                input.innerText = `Hi, is ${a.name} still available?`;
+                onChatInput();
+            }
         }
         window.enquireAnimal = enquireAnimal;
 
@@ -17560,15 +18287,203 @@ var capacitorLocalNotifications = (function (exports, core) {
             if (!animals.length) { toast('Register an animal first, then you can list it for sale'); go('register'); return; }
             const sellable = animals.filter(a => !a.forSale);
             if (!sellable.length) { toast('All your animals are already listed for sale'); return; }
-            if (sellable.length === 1) { openAnimal(sellable[0].id); toast(`Tap “Add to marketplace” to list ${sellable[0].name}`); return; }
-            go('home');
-            toast('Open the animal you’d like to sell, then tap “Add to marketplace”');
+            if (sellable.length === 1) { openEditListing(sellable[0].id, { from: 'marketplace' }); return; }
+            renderSellPicker(sellable);
         }
         window.startSellFlow = startSellFlow;
+
+        // Choosing which animal to sell used to bounce the user to Home with a toast.
+        // Pick it right here instead, in the "Your listings" slot.
+        function renderSellPicker(sellable) {
+            const wrap = document.getElementById('my-listings');
+            if (!wrap) { go('home'); toast('Open the animal you’d like to sell, then tap “Add to marketplace”'); return; }
+            wrap.innerHTML = `
+      <div class="section-label" style="margin-top:0;"><h3>Choose an animal to sell</h3><span class="link" style="font-size:12px;" onclick="renderMyListings()">Cancel</span></div>
+      ${sellable.map(a => {
+                const cover = animalCoverPhoto(a);
+                return `<div class="mylist-item" onclick="openEditListing('${jsAttr(a.id)}',{from:'marketplace'})">
+          <div class="mylist-thumb" style="${cover ? `background-image:url('${cssUrl(cover)}');` : `background:${a.bgGradient || 'var(--verify)'};`}">${cover ? '' : speciesIcon(a.species, 26)}</div>
+          <div class="mylist-body">
+            <div class="mylist-name">${esc(a.name)}</div>
+            <div class="mylist-meta">${esc(a.breed || a.species || '')}${cover ? '' : ' · no photo yet'}</div>
+          </div>
+          <div class="mylist-actions"><button style="border-color:var(--verify);color:var(--verify);">List</button></div>
+        </div>`;
+            }).join('')}`;
+            wrap.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+        }
+        window.renderSellPicker = renderSellPicker;
+
+        /* ---- Listing photos -------------------------------------------------
+           Shared by the signed-in and guest marketplaces so a card looks the same
+           in both. The species icon sits underneath as the fallback layer, so a
+           broken/missing image degrades to the old icon-on-gradient card. */
+        function marketCardMediaHtml(a, opts = {}) {
+            const gallery = animalPhotoGallery(a);
+            const hero = gallery[0]?.url || null;
+            const count = gallery.length;
+            return `<div class="market-img" style="background:${a.bgGradient || 'var(--verify-tint)'};">
+        <div class="mi-fallback" style="position:absolute;inset:0;display:${hero ? 'none' : 'flex'};align-items:center;justify-content:center;color:rgba(255,255,255,0.5);">${speciesIcon(a.species, 56)}</div>
+        ${hero ? `<img class="mi-blur" src="${esc(hero)}" alt="" aria-hidden="true" loading="lazy" onerror="marketPhotoFailed(this)">
+        <img class="mi-photo" src="${esc(hero)}" alt="${esc(a.name)}" loading="lazy" onerror="marketPhotoFailed(this)">` : ''}
+        <div class="market-badge">${a.blueTickVerified ? `<span class="badge verified" style="background:rgba(255,255,255,0.92);">${blueTick(13)} Verified</span>` : `<span class="badge grey" style="background:rgba(255,255,255,0.85);">Unverified</span>`}</div>
+        ${opts.mine ? `<div class="market-mine-tag"><span class="badge gold" style="background:rgba(255,255,255,0.92);">Your listing</span></div>` : ''}
+        ${count > 1 ? `<div class="market-photo-count">${I('<path d="M20 7h-2.4l-1.6-2H8L6.4 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><circle cx="12" cy="13" r="3.2"/>', 11)} ${count}</div>` : ''}
+      </div>`;
+        }
+
+        // A listing photo that can't load (deleted from storage, stale URL, offline) must
+        // leave the species-icon card behind, not a blank strip.
+        function marketPhotoFailed(img) {
+            const box = img.closest ? img.closest('.market-img') : null;
+            img.remove();
+            if (box && !box.querySelector('.mi-photo')) {
+                const f = box.querySelector('.mi-fallback');
+                if (f) f.style.display = 'flex';
+            }
+        }
+        window.marketPhotoFailed = marketPhotoFailed;
+
+        // Thumbnail strip of every photo on a listing; tapping one opens the viewer.
+        function photoStripHtml(a) {
+            const gallery = animalPhotoGallery(a);
+            if (gallery.length < 2) return '';
+            return `<div class="section-label"><h3>Photos</h3><span style="font-size:11.5px;color:var(--ink-faint);">${gallery.length} photos</span></div>
+      <div class="photo-strip">
+        ${gallery.map((p, i) => `<div class="photo-strip-item" onclick="openAnimalPhotoViewer('${jsAttr(a.id)}',${i})">
+            <img src="${esc(p.url)}" alt="${esc(p.label)}" loading="lazy">
+            <div class="psl">${esc(p.label)}</div>
+        </div>`).join('')}
+      </div>`;
+        }
+
+        /* ---- Full-screen photo viewer --------------------------------------- */
+        let lightboxPhotos = [];
+        let lightboxIndex = 0;
+
+        // Resolve the animal from whichever store holds it (public listing, own
+        // registry, or the conversation cache) and open its gallery at `index`.
+        function openAnimalPhotoViewer(animalId, index) {
+            const a = marketListings.find(x => x.id === animalId)
+                || animals.find(x => x.id === animalId)
+                || convAnimalCache[animalId];
+            const photos = animalPhotoGallery(a);
+            if (!photos.length) return;
+            lightboxPhotos = photos;
+            lightboxIndex = Math.max(0, Math.min(Number(index) || 0, photos.length - 1));
+            let el = document.getElementById('photo-lightbox');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'photo-lightbox';
+                el.className = 'lightbox';
+                el.onclick = e => { if (e.target === el) closePhotoLightbox(); };
+                (document.getElementById('app') || document.body).appendChild(el);
+            }
+            el.style.display = 'flex';
+            paintLightbox();
+        }
+        window.openAnimalPhotoViewer = openAnimalPhotoViewer;
+
+        function paintLightbox() {
+            const el = document.getElementById('photo-lightbox');
+            const p = lightboxPhotos[lightboxIndex];
+            if (!el || !p) return;
+            el.innerHTML = `
+      <div class="lb-bar">
+        <div style="font-size:12px;font-weight:700;">${lightboxIndex + 1} / ${lightboxPhotos.length}</div>
+        <button class="lb-btn" onclick="closePhotoLightbox()">✕</button>
+      </div>
+      <img src="${esc(p.url)}" alt="${esc(p.label)}">
+      <div class="lb-caption">${esc(p.label)}</div>
+      ${lightboxPhotos.length > 1 ? `<div class="lb-nav">
+        <button class="lb-btn" onclick="stepLightbox(-1)">‹</button>
+        <button class="lb-btn" onclick="stepLightbox(1)">›</button>
+      </div>` : ''}`;
+        }
+
+        function stepLightbox(dir) {
+            if (!lightboxPhotos.length) return;
+            lightboxIndex = (lightboxIndex + dir + lightboxPhotos.length) % lightboxPhotos.length;
+            paintLightbox();
+        }
+        window.stepLightbox = stepLightbox;
+
+        function closePhotoLightbox() {
+            const el = document.getElementById('photo-lightbox');
+            if (el) el.style.display = 'none';
+        }
+        window.closePhotoLightbox = closePhotoLightbox;
+
+        /* ---- Seller view: "Your listings" -----------------------------------
+           Renders above the public browse list on the Marketplace screen so a
+           seller can see, at a glance, what they have on the market and how many
+           buyers have enquired on each animal. */
+        function renderMyListings() {
+            const wrap = document.getElementById('my-listings');
+            if (!wrap) return;
+            if (isGuest || !currentUser.id) { wrap.innerHTML = ''; return; }
+            const mine = animals.filter(a => a.forSale);
+            if (!mine.length) {
+                wrap.innerHTML = `<div class="card" style="padding:12px 15px;margin-bottom:14px;">
+        <div style="font-size:12.5px;color:var(--ink-faint);line-height:1.5;">You have nothing on the market yet. Open an animal and tap <b>Add to marketplace</b> to list it — its photos come along automatically.</div>
+      </div>`;
+                return;
+            }
+            // Listings with no picture are the single biggest reason an animal gets no
+            // enquiries, so say so at the top and link straight to the fix.
+            const noPhoto = mine.filter(a => !animalCoverPhoto(a));
+            // Disjoint from the photo nudge so the two banners never double up on one animal.
+            const noPrice = mine.filter(a => !a.salePrice && animalCoverPhoto(a));
+            const nudge = (list, text, cta) => list.length ? `
+        <div class="card" style="padding:11px 14px;margin-bottom:10px;background:var(--signal-tint);border:none;cursor:pointer;" onclick="openEditListing('${jsAttr(list[0].id)}',{from:'marketplace'})">
+          <div style="font-size:12.5px;font-weight:700;color:#8A5A12;">${text}</div>
+          <div style="font-size:11.5px;color:#8A5A12;opacity:.85;margin-top:3px;">${cta}</div>
+        </div>` : '';
+            wrap.innerHTML = `
+      <div class="section-label" style="margin-top:0;"><h3>Your listings</h3><span style="font-size:11.5px;color:var(--ink-faint);">${mine.length} on the market</span></div>
+      ${nudge(noPhoto,
+                noPhoto.length === 1 ? `${esc(noPhoto[0].name)} has no photo` : `${noPhoto.length} of your listings have no photo`,
+                'Buyers scroll past listings without a picture — tap to add one.')}
+      ${nudge(noPrice,
+                noPrice.length === 1 ? `${esc(noPrice[0].name)} has no asking price` : `${noPrice.length} of your listings have no price`,
+                'Tap to set what you are asking for it.')}
+      ${mine.map(a => {
+                const enq = conversations.filter(c => c.animalId === a.id);
+                const unread = enq.reduce((s, c) => s + (c.unreadCount || 0), 0);
+                const cover = animalCoverPhoto(a);
+                const photoCount = animalPhotoGallery(a).length;
+                return `<div class="mylist-item">
+          <div class="mylist-thumb" style="${cover ? `background-image:url('${cssUrl(cover)}');` : `background:${a.bgGradient || 'var(--verify)'};`}" onclick="openEditListing('${jsAttr(a.id)}',{from:'marketplace'})">${cover ? '' : speciesIcon(a.species, 26)}</div>
+          <div class="mylist-body" onclick="openMarketDetail('${jsAttr(a.id)}')">
+            <div class="mylist-name">${esc(a.name)}${a.blueTickVerified ? blueTick(13) : ''}</div>
+            <div class="mylist-price">${a.salePrice ? `R ${a.salePrice.toLocaleString()}` : '<span style="color:#8A5A12;font-size:13px;">No price set</span>'}</div>
+            <div class="mylist-meta">${photoCount ? `${photoCount} photo${photoCount > 1 ? 's' : ''}` : '<span style="color:#8A5A12;font-weight:700;">No photo</span>'} · ${enq.length ? `${enq.length} enquir${enq.length === 1 ? 'y' : 'ies'}` : 'No enquiries yet'}${unread ? ` · <b style="color:var(--verify);">${unread} unread</b>` : ''}</div>
+          </div>
+          <div class="mylist-actions">
+            <button onclick="event.stopPropagation();openEditListing('${jsAttr(a.id)}',{from:'marketplace'})">Edit</button>
+            <button onclick="event.stopPropagation();openListingEnquiries('${jsAttr(a.id)}')" ${enq.length ? `style="border-color:var(--verify);color:var(--verify);"` : ''}>Enquiries${enq.length ? ` (${enq.length})` : ''}</button>
+          </div>
+        </div>`;
+            }).join('')}`;
+        }
+        window.renderMyListings = renderMyListings;
+
+        // Jump from a listing to the buyers enquiring on it: straight into the chat
+        // when there's only one, otherwise the inbox filtered to that animal.
+        function openListingEnquiries(animalId) {
+            const enq = conversations.filter(c => c.animalId === animalId);
+            if (!enq.length) { toast('No enquiries on this listing yet'); return; }
+            if (enq.length === 1) { openChat(enq[0].id); return; }
+            go('messages');            // go() resets the filter on entry…
+            messagesAnimalFilter = animalId;  // …so apply it after, then repaint.
+            renderMessages();
+        }
+        window.openListingEnquiries = openListingEnquiries;
 
         async function renderMarketplace() {
             const chips = document.getElementById('market-filter-chips');
             if (chips) chips.innerHTML = ['all', 'dog', 'cat', 'horse', 'cattle', 'sheep', 'goat'].map(k => `<div class="chip ${k === marketFilter ? 'on' : ''}" onclick="setMarketFilter('${k}',this)">${k === 'all' ? 'All species' : k.charAt(0).toUpperCase() + k.slice(1)}</div>`).join('');
+            renderMyListings();
             const ml = document.getElementById('market-listings');
             if (!ml) return;
             // Prefer public listings (all sellers); fall back to local own animals.
@@ -17586,16 +18501,20 @@ var capacitorLocalNotifications = (function (exports, core) {
             ml.innerHTML = listings.map(a => {
                 const score = a.trustScore !== undefined ? a.trustScore : (calcTrustScore(a).score);
                 const dist = formatDistance(a._distanceKm);
-                return `<div class="market-card" onclick="openMarketDetail('${a.id}')">
-      <div class="market-img" style="background:${a.bgGradient || 'var(--verify-tint)'};"><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.5);">${speciesIcon(a.species, 56)}</div>
-        <div class="market-badge">${a.blueTickVerified ? `<span class="badge verified" style="background:rgba(255,255,255,0.92);">${blueTick(13)} Verified</span>` : `<span class="badge grey" style="background:rgba(255,255,255,0.85);">Unverified</span>`}</div>
-      </div>
+                // Own listings stay in the browse list (so the seller can see exactly what
+                // buyers see) but are tagged, and Enquire becomes a management shortcut.
+                const mine = !!currentUser.id && (a.sellerId === currentUser.id || (!a.sellerId && animals.some(x => x.id === a.id)));
+                const enq = mine ? conversations.filter(c => c.animalId === a.id).length : 0;
+                return `<div class="market-card" onclick="openMarketDetail('${jsAttr(a.id)}')">
+      ${marketCardMediaHtml(a, { mine })}
       <div class="market-body">
         <div class="mname">${esc(a.name)}${a.blueTickVerified ? ` ${blueTick(13)}` : ''}</div>
         <div class="mbreed">${esc(a.breed)} · ${esc(a.gender)} · ${calcAge(a.dob)}</div>
         <div class="mprice">R ${(a.salePrice || 0).toLocaleString()}</div>
         ${dist ? `<div style="margin:2px 0 4px;"><span class="distance-badge">📍 ${dist}</span></div>` : ''}
-        <div class="mfooter"><span style="font-size:12px;color:var(--ink-faint);">${esc(a.owner)} · Trust ${score}/100</span><button style="background:var(--verify);color:#fff;border:none;border-radius:9px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation();enquireAnimal('${a.id}')">Enquire</button></div>
+        <div class="mfooter"><span style="font-size:12px;color:var(--ink-faint);">${mine ? 'You' : esc(a.owner)} · Trust ${score}/100</span>${mine
+                    ? `<button style="background:var(--paper);color:var(--ink-soft);border:1px solid var(--line);border-radius:9px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation();openListingEnquiries('${jsAttr(a.id)}')">${enq ? `${enq} enquir${enq === 1 ? 'y' : 'ies'}` : 'No enquiries'}</button>`
+                    : `<button style="background:var(--verify);color:#fff;border:none;border-radius:9px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation();enquireAnimal('${jsAttr(a.id)}')">Enquire</button>`}</div>
       </div>
     </div>`;
             }).join('');
@@ -17615,9 +18534,13 @@ var capacitorLocalNotifications = (function (exports, core) {
         }
         window.setMarketFilter = setMarketFilter;
 
-        function openMarketDetail(id) {
-            const a = marketListings.find(x => x.id === id) || animals.find(x => x.id === id);
-            if (!a) return;
+        // `preview` lets the listing editor render an unsaved draft as a buyer would see
+        // it. Without it, convAnimalCache covers an animal a chat is about that has since
+        // been de-listed — tapping through from a conversation must still show it.
+        function openMarketDetail(id, preview) {
+            const a = preview || marketListings.find(x => x.id === id) || animals.find(x => x.id === id) || convAnimalCache[id];
+            if (!a) { toast('This listing is no longer available'); return; }
+            if (!preview) marketDetailReturn = 'marketplace';
             const { score, earned } = calcTrustScore(a);
             const s = document.getElementById('market-detail-scroll');
             if (!s) return;
@@ -17626,7 +18549,7 @@ var capacitorLocalNotifications = (function (exports, core) {
       <div class="id-card-bg"><div class="id-card-bg-photo${a.photoUrl ? ' has-photo' : ''}" style="${a.photoUrl ? `background-image:url('${cssUrl(a.photoUrl)}');` : `background:${a.bgGradient || 'var(--verify)'};`}"></div><div class="id-card-bg-gradient"></div><div class="id-card-bg-texture"></div></div>
       <div class="id-card-content">
         <div class="id-card-top"><div class="id-card-brand">Marketplace Listing</div><div class="chip-icon"></div></div>
-        <div class="id-photo">${(a.photos?.faceUrl || a.photoUrl) ? `<img src="${esc(a.photos?.faceUrl || a.photoUrl)}" alt="${esc(a.name)}">` : speciesIcon(a.species, 30)}</div>
+        <div class="id-photo" onclick="openAnimalPhotoViewer('${jsAttr(a.id)}',0)">${(a.photos?.faceUrl || a.photoUrl) ? `<img src="${esc(a.photos?.faceUrl || a.photoUrl)}" alt="${esc(a.name)}">` : speciesIcon(a.species, 30)}</div>
         <h2>${esc(a.name)}</h2><div class="breed">${esc(a.breed)} · ${esc(a.gender)} · ${calcAge(a.dob)}</div>
         <div class="id-grid">
           <div class="id-field"><div class="k">Asking price</div><div class="v">R ${(a.salePrice || 0).toLocaleString()}</div></div>
@@ -17637,6 +18560,7 @@ var capacitorLocalNotifications = (function (exports, core) {
       </div>
     </div></div>
     <div style="margin:10px 0 4px;display:flex;align-items:center;gap:8px;">${a.blueTickVerified ? `${blueTick(18)}<span style="font-size:13.5px;font-weight:700;">Verified listing</span>` : `<span style="font-size:12px;color:var(--ink-faint);">Not yet verified</span>`}</div>
+    ${photoStripHtml(a)}
     ${a.saleNotes ? `<div class="card" style="padding:13px 15px;margin:12px 0 4px;"><div style="font-size:13.5px;font-weight:600;margin-bottom:6px;">Seller notes</div><div style="font-size:13px;color:var(--ink-soft);line-height:1.6;">${esc(a.saleNotes)}</div></div>` : ''}
     <div class="section-label"><h3>Verification summary</h3></div>
     <div class="card" style="padding:4px 15px;">
@@ -17667,6 +18591,18 @@ var capacitorLocalNotifications = (function (exports, core) {
             if (a.lat && a.lng) initStaticMap('market-detail-map', a.lat, a.lng, a.name);
         }
         window.openMarketDetail = openMarketDetail;
+
+        // Where the listing detail's back button goes — the marketplace normally, or back
+        // into the listing editor when this was a seller's preview.
+        function closeMarketDetail() {
+            if (marketDetailReturn === 'editlisting' && listingEditId) {
+                marketDetailReturn = 'marketplace';
+                openEditListing(listingEditId, { from: listingEditorReturn });
+                return;
+            }
+            go('marketplace');
+        }
+        window.closeMarketDetail = closeMarketDetail;
 
         /* ==============================================================
            BREEDING ANALYTICS
@@ -17845,6 +18781,9 @@ var capacitorLocalNotifications = (function (exports, core) {
             // Decide by the VISIBLE screen, not currentAnimalId — a stale id from a
             // previously viewed animal must never receive a register-screen photo.
             const onRegister = !document.getElementById('screen-register')?.classList.contains('hidden');
+            // Taking the cover photo from inside the listing editor must come back to the
+            // editor, not dump the seller on the animal profile mid-listing.
+            const onListing = !document.getElementById('screen-editlisting')?.classList.contains('hidden');
             suspendHydration();
             try {
                 const image = await Capacitor.Plugins.Camera.getPhoto({
@@ -17859,8 +18798,8 @@ var capacitorLocalNotifications = (function (exports, core) {
                     const ok = await saveCapturedPhoto(image.dataUrl);
                     if (ok) {
                         toast(`${PHOTO_MODE_TITLES[mode] || 'Photo'} saved ✓`);
-                        renderAnimal(currentAnimalId);
-                        go('animal');
+                        if (onListing) { renderEditListingPhotos(); go('editlisting'); }
+                        else { renderAnimal(currentAnimalId); go('animal'); }
                     }
                 } else {
                     toast('Open an animal first, then take its photo');
@@ -17984,6 +18923,7 @@ var capacitorLocalNotifications = (function (exports, core) {
         async function openGallery() {
             suspendHydration();
             const onRegister = !document.getElementById('screen-register')?.classList.contains('hidden');
+            const onListing = !document.getElementById('screen-editlisting')?.classList.contains('hidden');
             try {
                 const image = await Capacitor.Plugins.Camera.getPhoto({
                     quality: 85, width: 1400, allowEditing: false,
@@ -17997,8 +18937,8 @@ var capacitorLocalNotifications = (function (exports, core) {
                     const ok = await saveCapturedPhoto(image.dataUrl);
                     if (ok) {
                         toast('Photo saved from gallery ✓');
-                        renderAnimal(currentAnimalId);
-                        go('animal');
+                        if (onListing) { renderEditListingPhotos(); go('editlisting'); }
+                        else { renderAnimal(currentAnimalId); go('animal'); }
                     }
                 } else {
                     toast('Open an animal first, then add its photo');
