@@ -6326,7 +6326,30 @@ var capacitorLocalNotifications = (function (exports, core) {
     <div id="app">
 
         <!-- ===== AUTH ===== -->
-        <div class="screen" id="screen-auth">
+        <!-- ===== BOOT ===== -->
+        <!-- The FIRST screen the WebView paints. The native splash is configured with
+             launchShowDuration:0 / launchAutoHide:true, so it vanishes the instant the
+             page loads; whichever screen is not `hidden` is then on show. That used to
+             be the sign-in screen, so every launch flashed a login page while
+             checkStoredSession() read storage — even for a signed-in user. This stands
+             in on the same background until the session decision is made. -->
+        <div class="screen" id="screen-boot" data-no-i18n>
+            <div
+                style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--paper);">
+                <div class="auth-logo" style="margin:0;"><svg width="34" height="34" viewBox="0 0 1024 1024"
+                        fill="#F4F7F5" aria-hidden="true">
+                        <path d="M512 520 C596 520 664 566 690 628 C712 680 706 724 668 760 C642 784 616 792 592 792 C566 792 548 780 512 780 C476 780 458 792 432 792 C408 792 382 784 356 760 C318 724 312 680 334 628 C360 566 428 520 512 520 Z" />
+                        <ellipse cx="350" cy="436" rx="60" ry="84" transform="rotate(-24 350 436)" />
+                        <ellipse cx="452" cy="356" rx="64" ry="96" transform="rotate(-8 452 356)" />
+                        <ellipse cx="572" cy="356" rx="64" ry="96" transform="rotate(8 572 356)" />
+                        <ellipse cx="674" cy="436" rx="60" ry="84" transform="rotate(24 674 436)" />
+                    </svg></div>
+                <div style="font-family:var(--font-display);font-size:17px;font-weight:600;color:var(--ink);">NG&nbsp;Safeguard
+                </div>
+            </div>
+        </div>
+
+        <div class="screen hidden" id="screen-auth">
             <div class="auth-wrap">
                 <div class="auth-logo"><svg width="34" height="34" viewBox="0 0 1024 1024" fill="#F4F7F5" aria-hidden="true">
                         <path d="M512 520 C596 520 664 566 690 628 C712 680 706 724 668 760 C642 784 616 792 592 792 C566 792 548 780 512 780 C476 780 458 792 432 792 C408 792 382 784 356 760 C318 724 312 680 334 628 C360 566 428 520 512 520 Z" />
@@ -6896,6 +6919,8 @@ var capacitorLocalNotifications = (function (exports, core) {
                 <button class="btn btn-primary" id="el-save" onclick="saveListing()">Save listing</button>
                 <button class="btn btn-ghost" style="margin-top:8px;" onclick="previewListing()">Preview as a buyer
                     sees it</button>
+                <button class="btn btn-ghost" style="margin-top:8px;" id="el-sold"
+                    onclick="markListingSold(listingEditId)">Mark as sold</button>
                 <button class="btn btn-danger-ghost" style="margin-top:8px;" id="el-remove"
                     onclick="unlistFromEditor()">Remove from marketplace</button>
                 <div style="height:20px;"></div>
@@ -7328,7 +7353,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                             <path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor"
                                 stroke-width="1.6" stroke-linejoin="round" />
                         </svg>Gallery</div>
-                    <div class="cam-capture-btn" onclick="simulateCapture()">
+                    <div class="cam-capture-btn" id="cam-capture-btn" onclick="simulateCapture()">
                         <div class="inner"></div>
                     </div>
                     <div class="cam-side-btn" onclick="renderVerifyResult();go('verify')"><svg width="20" height="20"
@@ -7661,7 +7686,28 @@ var capacitorLocalNotifications = (function (exports, core) {
                 <div id="my-listings"></div>
                 <input id="market-search" placeholder="Search breed, name…" oninput="renderMarketplace()"
                     style="width:100%;padding:11px 14px;border-radius:12px;border:1px solid var(--line);background:var(--paper-raised);font-size:14px;color:var(--ink);font-family:var(--font-body);margin-bottom:12px;" data-i18n="search_breed_name" data-i18n-attr="placeholder">
-                <div class="chip-scroll" style="margin-bottom:14px;" id="market-filter-chips"></div>
+                <div class="chip-scroll" style="margin-bottom:10px;" id="market-filter-chips"></div>
+                <!-- Sort / price / saved. Form controls are skipped by the dynamic
+                     translator by design, so their values are never rewritten. -->
+                <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+                    <select id="market-sort" onchange="setMarketSort(this.value)"
+                        style="flex:1 1 46%;min-width:140px;padding:9px 11px;border-radius:11px;border:1px solid var(--line);background:var(--paper-raised);font-size:12.5px;color:var(--ink);font-family:var(--font-body);">
+                        <option value="nearest">Closest first</option>
+                        <option value="newest">Newest first</option>
+                        <option value="price_low">Price: low to high</option>
+                        <option value="price_high">Price: high to low</option>
+                    </select>
+                    <button id="market-saved-toggle" onclick="toggleSavedOnly()"
+                        style="flex:0 0 auto;padding:9px 13px;border-radius:11px;border:1px solid var(--line);background:var(--paper-raised);font-size:12.5px;font-weight:700;color:var(--ink-soft);cursor:pointer;font-family:var(--font-body);">♥
+                        Saved</button>
+                    <input id="market-price-min" type="number" inputmode="numeric" placeholder="Min R"
+                        oninput="renderMarketplace()"
+                        style="flex:1 1 40%;min-width:100px;padding:9px 11px;border-radius:11px;border:1px solid var(--line);background:var(--paper-raised);font-size:12.5px;color:var(--ink);font-family:var(--font-body);">
+                    <input id="market-price-max" type="number" inputmode="numeric" placeholder="Max R"
+                        oninput="renderMarketplace()"
+                        style="flex:1 1 40%;min-width:100px;padding:9px 11px;border-radius:11px;border:1px solid var(--line);background:var(--paper-raised);font-size:12.5px;color:var(--ink);font-family:var(--font-body);">
+                </div>
+                <div id="market-notice"></div>
                 <div id="market-listings"></div>
             </div>
         </div>
@@ -9224,7 +9270,8 @@ var capacitorLocalNotifications = (function (exports, core) {
         </div>
 
         <!-- ===== TAB BAR ===== -->
-        <div class="tabbar" id="tabbar">
+        <!-- Hidden until go() decides — the boot screen must not flash a tab bar. -->
+        <div class="tabbar" id="tabbar" style="display:none;">
             <div class="tabbar-inner glass">
                 <div class="tab active" data-tab="home" onclick="go('home')">
                     <svg viewBox="0 0 24 24" fill="none">
@@ -9902,6 +9949,11 @@ var capacitorLocalNotifications = (function (exports, core) {
         let marketFilter = 'all';
         let marketListings = []; // public for-sale animals from all sellers (distance-ranked)
         let marketDetailReturn = 'marketplace'; // 'editlisting' while previewing a draft
+        // Buyer-side browse state. Sort/price/saved live here; the watchlist and the
+        // "seen" set are device-local (a server-side saved-search needs a table).
+        let marketSort = 'nearest';
+        let marketSellerFilter = null;  // {id,name} — "listings by this seller"
+        let marketSavedOnly = false;
         // animalId → {name,species,breed,salePrice,forSale,photoUrl,photoUrls} for animals a
         // conversation is about that aren't in `animals` (someone else's listing) — so the
         // inbox and chat can show WHICH animal an enquiry concerns, with its photo.
@@ -9928,7 +9980,7 @@ var capacitorLocalNotifications = (function (exports, core) {
         let _savingVetAppt = false;
         let _sendingTransfer = false;
         let _foundGpsCoords = null;
-        const APP_VERSION = '1.9.0';//Bump on EVERY release (APK or OTA). Single source of truth: scripts/ota-publish.mjs reads this exact constant to version the published bundle, and the OTA server compares it to decide if a device needs an update.
+        const APP_VERSION = '1.9.1';//Bump on EVERY release (APK or OTA). Single source of truth: scripts/ota-publish.mjs reads this exact constant to version the published bundle, and the OTA server compares it to decide if a device needs an update.
 
         /* ==============================================================
            i18n — offline, CSP-safe multi-language (EN / isiZulu / Afrikaans).
@@ -10051,6 +10103,17 @@ var capacitorLocalNotifications = (function (exports, core) {
             }
         }
         window.translateDynamic = translateDynamic;
+
+        // Re-translate a container that was just re-rendered IN PLACE. applyTranslations
+        // only ran on go(), so any screen that repaints itself without navigating — the
+        // marketplace on every keystroke, the inbox, chat messages, the listing editor —
+        // reverted to English mid-session. Idempotent: already-translated text no longer
+        // matches the English map, so repeat calls are a no-op.
+        function i18nRepaint(el) {
+            if (I18N_LANG === 'en') return;
+            try { applyTranslations(el || document); } catch (e) { console.warn('i18nRepaint:', e); }
+        }
+        window.i18nRepaint = i18nRepaint;
 
         // Swap every data-i18n element on screen to the active language, then
         // sweep dynamic (untagged) text nodes in the same container.
@@ -10414,6 +10477,20 @@ var capacitorLocalNotifications = (function (exports, core) {
            doRunOtaUpdate's `mandatory` branch).
            ============================================================== */
         const RELEASE_NOTES = [
+            {
+                version: '1.9.1',
+                date: '2026-07-28',
+                headline: 'The app tells you things now',
+                mandatory: true,
+                items: [
+                    { icon: 'chat', title: 'You get told when someone messages you', body: 'An enquiry on your listing now raises a notification on your phone while the app is open or when you switch back to it — instead of sitting there unseen until you next reopened the app and happened to check Messages. Theft alerts and scan-location pings surface the same way. Tapping a notification opens what it is about.' },
+                    { icon: 'market', title: 'Mark a sale as done', body: 'A listing can be marked Sold: it comes off the marketplace and the app offers to transfer the record to the buyer straight away, so ownership actually follows the animal.' },
+                    { icon: 'market', title: 'Find things on the marketplace', body: 'Sort by closest, newest or price, filter by a price range, and save listings with ♥ to come back to. Cards show how long ago something was listed, and the market tells you how many listings are new since you last looked.' },
+                    { icon: 'market', title: 'Something about the seller', body: 'A listing now shows how much that seller has on the market and how much of it is verified — with a plain warning that this is not a seller rating and you should still check the tag and papers in person.' },
+                    { icon: 'lang', title: 'Your language stops falling back to English', body: 'Screens that redraw themselves — marketplace search, your inbox, chat, the listing editor — reverted to English mid-use. They now stay in the language you chose.' },
+                    { icon: 'scan', title: 'No more login screen flash on startup', body: 'Opening the app flashed the sign-in page while it checked your saved session. It now goes straight to Home if you are signed in.' },
+                ]
+            },
             {
                 version: '1.9.0',
                 date: '2026-07-28',
@@ -10915,7 +10992,15 @@ var capacitorLocalNotifications = (function (exports, core) {
 
             if (screen === 'home') renderHome();
             if (screen === 'notifications') { renderNotifications(); loadIncomingTransfers().then(() => { renderNotifications(); updateBadges(); }); }
-            if (screen === 'messages') { renderMessages(); loadConversationAnimals().then(renderMessages); }
+            if (screen === 'messages') {
+                renderMessages();
+                // Opening the inbox pulls the latest conversations — it used to show
+                // whatever was loaded at sign-in, so a new enquiry simply wasn't there.
+                refreshConversations()
+                    .then(loadConversationAnimals)
+                    .then(() => { renderMessages(); updateBadges(); })
+                    .catch(() => loadConversationAnimals().then(renderMessages).catch(() => { }));
+            }
             if (screen === 'account') renderAccount();
             if (screen === 'marketplace') { loadMarketListings().then(() => { isGuest ? renderGuestMarket() : renderMarketplace(); }); }
             if (screen === 'calendar') renderCalendar();
@@ -11671,7 +11756,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                 // there is no per-animal blue tick or owner_phone/owner_email column —
                 // verification is derived from biometric_verified_at and seller contact
                 // happens through messaging.
-                const select = `id,name,species,breed,gender,date_of_birth,sale_price,sale_notes,owner_id,`
+                const select = `id,name,species,breed,gender,date_of_birth,sale_price,sale_notes,owner_id,created_at,`
                     + `nfc_uid,status,sire_name,dam_name,vet_contact,`
                     + `bg_gradient,trust_score,biometric_verified_at,gps_latitude,gps_longitude,`
                     + `animal_photos(public_url,thumbnail_url,photo_type)`;
@@ -11711,6 +11796,7 @@ var capacitorLocalNotifications = (function (exports, core) {
                         id: a.id, name: a.name, species: a.species, breed: a.breed, gender: a.gender,
                         dob: a.date_of_birth, salePrice: a.sale_price, saleNotes: a.sale_notes,
                         status: a.status,
+                        listedAt: a.created_at || null,
                         nfcUid: a.nfc_uid || null,
                         sire: a.sire_name || null, dam: a.dam_name || null, vetContact: a.vet_contact || null,
                         photoUrl: photo,
@@ -12147,6 +12233,104 @@ var capacitorLocalNotifications = (function (exports, core) {
             } catch (e) { console.warn('notifyUser failed:', e.message); }
         }
         window.notifyUser = notifyUser;
+
+        /* ==============================================================
+           LIVE ALERTS
+           The app could raise nothing while it was open: a buyer's enquiry, a
+           theft alert or a scan-location ping only surfaced on the next cold
+           start. This polls the server while the app is in the foreground and
+           raises a real device notification for anything new. Waking a CLOSED
+           app still needs push (FCM) and a native release — this covers open
+           and resumed, which is where most of the loss was.
+           ============================================================== */
+        const ANNOUNCED_KEY = 'announcedNotifications';
+        let announcedIds = null;      // Set of notification ids already raised
+        let announcedSeeded = false;  // first pass only records, so a launch never spams
+
+        function loadAnnounced() {
+            if (announcedIds) return announcedIds;
+            try { announcedIds = new Set(JSON.parse(localStorage.getItem(ANNOUNCED_KEY) || '[]')); }
+            catch { announcedIds = new Set(); }
+            return announcedIds;
+        }
+        function saveAnnounced() {
+            // Keep the tail only — this is a dedupe log, not history.
+            try { localStorage.setItem(ANNOUNCED_KEY, JSON.stringify([...loadAnnounced()].slice(-300))); } catch (e) { }
+        }
+
+        // Raise a device notification for every unread item we haven't announced.
+        async function announceNewNotifications() {
+            const seen = loadAnnounced();
+            const fresh = (notifications || []).filter(n => n.id && !n.read && !seen.has(n.id));
+            fresh.forEach(n => seen.add(n.id));
+            saveAnnounced();
+            // The first pass after a (re)start only records what is already there —
+            // otherwise every unread item in the list would fire at once.
+            if (!announcedSeeded) { announcedSeeded = true; return; }
+            if (!fresh.length) return;
+            const LN = window.Capacitor?.Plugins?.LocalNotifications;
+            if (!LN) return;
+            try {
+                if (LN.requestPermissions) {
+                    const perm = await LN.requestPermissions();
+                    if (perm && perm.display && perm.display !== 'granted') return;
+                }
+                await LN.schedule({
+                    notifications: fresh.slice(0, 5).map(n => ({
+                        id: reminderHash(n.id) * 10 + 3,
+                        title: n.title || 'NG Safeguard',
+                        body: n.body || '',
+                        extra: { screen: notificationScreen(n) }
+                    }))
+                });
+            } catch (e) { console.warn('announceNewNotifications:', e); }
+        }
+
+        // Where tapping a notification should land.
+        function notificationScreen(n) {
+            const t = n.rawType || n.type;
+            if (t === 'message' || t === 'marketplace_enquiry') return 'messages';
+            if (t === 'transfer_request' || t === 'transfer_accepted') return 'transferhistory';
+            return 'notifications';
+        }
+
+        // loadConversationsFromSupabase() REPLACES the array, which would drop a
+        // conversation created seconds ago that hasn't been persisted yet (temp 'c…'
+        // id). Carry those over.
+        async function refreshConversations() {
+            const pending = (conversations || []).filter(c => String(c.id).startsWith('c'));
+            await loadConversationsFromSupabase();
+            for (const p of pending) {
+                const dup = conversations.some(c => c.otherUserId === p.otherUserId && (c.animalId || null) === (p.animalId || null));
+                if (!dup) conversations.push(p);
+            }
+        }
+        window.refreshConversations = refreshConversations;
+
+        let alertPollTimer = null;
+        function stopAlertPolling() { if (alertPollTimer) { clearInterval(alertPollTimer); alertPollTimer = null; } }
+        function startAlertPolling() {
+            stopAlertPolling();
+            alertPollTimer = setInterval(() => { pollLiveAlerts().catch(() => { }); }, 60000);
+        }
+        window.startAlertPolling = startAlertPolling;
+
+        async function pollLiveAlerts() {
+            if (isGuest || !currentUser.id) return;
+            if (document.visibilityState !== 'visible') return;
+            if (_hydrateSuspended > 0 || _hydrating) return;
+            await loadNotificationsFromSupabase().catch(() => { });
+            // The open chat has its own 5s poll; replacing the list underneath it would
+            // fight that, so leave conversations alone while a chat is on screen.
+            const chatOpen = !document.getElementById('screen-chat')?.classList.contains('hidden');
+            if (!chatOpen) await refreshConversations().catch(() => { });
+            await announceNewNotifications();
+            updateBadges();
+            const visible = document.querySelector('.screen:not(.hidden)')?.id;
+            if (visible === 'screen-notifications') renderNotifications();
+            if (visible === 'screen-messages') renderMessages();
+        }
+        window.pollLiveAlerts = pollLiveAlerts;
 
         async function sendVetAccessRequest(clientUserId, animalId = null) {
             const msg = document.getElementById('vet-request-msg')?.value.trim() || '';
@@ -16570,6 +16754,8 @@ var capacitorLocalNotifications = (function (exports, core) {
             const rm = document.getElementById('el-remove');
             // '' (not 'block') so the stylesheet's flex layout is restored, not overridden.
             if (rm) rm.style.display = a.forSale ? '' : 'none';
+            const sold = document.getElementById('el-sold');
+            if (sold) sold.style.display = a.forSale ? '' : 'none';
             renderEditListingPhotos();
             go('editlisting');
         }
@@ -16610,6 +16796,7 @@ var capacitorLocalNotifications = (function (exports, core) {
       </div>` : ''}
       ${pending ? `<div style="margin-top:10px;font-size:11.5px;color:#8A5A12;line-height:1.5;">${pending} photo${pending > 1 ? 's are' : ' is'} still only on this device — saving the listing uploads ${pending > 1 ? 'them' : 'it'} so buyers can see ${pending > 1 ? 'them' : 'it'}.</div>` : ''}
       <div style="margin-top:10px;font-size:11.5px;color:var(--ink-faint);line-height:1.5;">Face, nose and side photos taken on the animal's profile also show in this gallery.</div>`;
+            i18nRepaint(box);
         }
         window.renderEditListingPhotos = renderEditListingPhotos;
 
@@ -16686,6 +16873,45 @@ var capacitorLocalNotifications = (function (exports, core) {
             });
         }
         window.previewListing = previewListing;
+
+        /* ---- Closing the loop: sold → ownership transfer ---------------------
+           The marketplace and the transfer flow never touched, so a sold animal
+           stayed listed forever and the ownership record — the whole point of
+           the app — was never updated. 'sold' is an allowed animals.status
+           value, so this needs no migration. */
+        async function markListingSold(id) {
+            const a = animals.find(x => x.id === id);
+            if (!a) return;
+            if (!window.confirm(`Mark ${a.name} as sold? It comes off the marketplace immediately.`)) return;
+            const wasPrice = a.salePrice;
+            a.forSale = false;
+            a.status = 'sold';
+            await saveData('animals', animals);
+            if (currentUser.id && isServerUuid(a.id)) {
+                const body = { for_sale: false, status: 'sold' };
+                try {
+                    await sbFetch(`animals?id=eq.${a.id}`, { method: 'PATCH', prefer: 'return=minimal', body: JSON.stringify(body) });
+                } catch (e) {
+                    addToSyncQueue({ path: `animals?id=eq.${a.id}`, method: 'PATCH', body });
+                }
+            }
+            await pushAnimalHistory(a, 'transfer', 'Sold', wasPrice ? `Sold for R ${Number(wasPrice).toLocaleString()}` : formatDate(new Date().toISOString().slice(0, 10)));
+            marketListings = marketListings.filter(m => m.id !== id);
+            listingDraft = null;
+            toast(`${a.name} marked as sold`);
+            renderAnimal(id);
+            // The sale isn't finished until the record moves with the animal.
+            if (window.confirm(`Transfer ${a.name}'s record to the buyer now? They get the full history, and you stay on the record as the previous owner.`)) {
+                currentAnimalId = id;
+                go('transfer');
+                const notes = document.getElementById('transfer-notes');
+                if (notes && !notes.value.trim() && wasPrice) notes.value = `Marketplace sale — R ${Number(wasPrice).toLocaleString()}`;
+                return;
+            }
+            closeEditListing();
+            refreshMarketplaceIfVisible();
+        }
+        window.markListingSold = markListingSold;
 
         async function unlistFromEditor() {
             const id = listingEditId;
@@ -17933,6 +18159,7 @@ var capacitorLocalNotifications = (function (exports, core) {
       </div>
     </div>`;
             }).join('');
+            i18nRepaint(list);
             if (messagesAnimalFilter && !shown.length) {
                 list.innerHTML = filterBar + `<div class="empty"><div class="et">No enquiries yet</div><div class="es">Nobody has messaged you about ${esc(filterName)} yet.</div></div>`;
             }
@@ -18065,6 +18292,7 @@ var capacitorLocalNotifications = (function (exports, core) {
       ${m.sender !== 'me' ? `<div class="msg-sender">${esc(c.otherName)}</div>` : ''}
       <div class="msg-bubble ${m.sender === 'me' ? 'sent' : 'recv'}">${m.contentType === 'scan_location' ? scanLocationBubbleHtml(m, i) : esc(m.text)}<div class="msg-time ${m.sender === 'me' ? '' : 'left'}">${esc(m.timestamp)}</div></div>
     </div>`).join('');
+            i18nRepaint(scroll);
             setTimeout(() => { scroll.scrollTop = scroll.scrollHeight; }, 50);
             // Render each scan-location bubble's pin on its own read-only mini-map,
             // same as the vet/breeder directory cards.
@@ -18163,6 +18391,21 @@ var capacitorLocalNotifications = (function (exports, core) {
                             method: 'PATCH', prefer: 'return=minimal',
                             body: JSON.stringify({ last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() })
                         }).catch(() => {});
+                        // TELL THEM. Sending a message used to write nothing to
+                        // notifications, so the recipient learned about an enquiry only
+                        // if they happened to reopen the app and go to Messages.
+                        // ('message' is an allowed notifications.type — no migration.)
+                        const recipient = c.otherUserId || (c.buyerId === currentUser.id ? c.sellerId : c.buyerId);
+                        if (recipient && recipient !== currentUser.id) {
+                            const about = c.animalId ? ` about ${c.animalName || 'your listing'}` : '';
+                            notifyUser(
+                                recipient,
+                                c.animalId ? 'marketplace_enquiry' : 'message',
+                                `${currentUser.name || 'Someone'}${about}`,
+                                text.length > 120 ? text.slice(0, 117) + '…' : text,
+                                'messages'
+                            );
+                        }
                     } catch (e) {
                         console.warn('Message send failed:', e);
                         toast('Message not sent — check your connection');
@@ -18310,6 +18553,7 @@ var capacitorLocalNotifications = (function (exports, core) {
           <div class="mylist-actions"><button style="border-color:var(--verify);color:var(--verify);">List</button></div>
         </div>`;
             }).join('')}`;
+            i18nRepaint(wrap);
             wrap.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
         }
         window.renderSellPicker = renderSellPicker;
@@ -18331,6 +18575,95 @@ var capacitorLocalNotifications = (function (exports, core) {
         ${count > 1 ? `<div class="market-photo-count">${I('<path d="M20 7h-2.4l-1.6-2H8L6.4 7H4a2 2 0 00-2 2v9a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><circle cx="12" cy="13" r="3.2"/>', 11)} ${count}</div>` : ''}
       </div>`;
         }
+
+        /* ---- Buyer-side browse helpers --------------------------------------
+           Saved listings and "what's new since I last looked" are stored on the
+           device: a server-side watchlist/saved-search needs a table that doesn't
+           exist yet. Device-local still beats nothing, and it is honest about it. */
+        const WATCHLIST_KEY = 'marketWatchlist';
+        const MARKET_SEEN_KEY = 'marketSeenListings';
+
+        function loadJsonList(key) {
+            try { const v = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v : []; }
+            catch { return []; }
+        }
+        function watchlist() { return loadJsonList(WATCHLIST_KEY); }
+        function isSaved(id) { return watchlist().includes(id); }
+        function toggleSaved(id) {
+            const list = watchlist();
+            const i = list.indexOf(id);
+            if (i >= 0) { list.splice(i, 1); toast('Removed from saved'); }
+            else { list.push(id); toast('Saved — find it under ♥ Saved'); }
+            try { localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list.slice(-200))); } catch (e) { }
+            renderMarketplace();
+        }
+        window.toggleSaved = toggleSaved;
+
+        // "Listed 3 days ago" — buyers need to know if they're looking at stale stock.
+        function listedAgo(iso) {
+            if (!iso) return '';
+            const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+            if (isNaN(days) || days < 0) return '';
+            if (days === 0) return 'Listed today';
+            if (days === 1) return 'Listed yesterday';
+            if (days < 30) return `Listed ${days} days ago`;
+            const months = Math.floor(days / 30);
+            return `Listed ${months} month${months > 1 ? 's' : ''} ago`;
+        }
+
+        /* ---- Seller signals -------------------------------------------------
+           The trust score rates the ANIMAL's paperwork; a buyer had nothing to go
+           on about the person. Reviews and completed-sale counts need tables that
+           don't exist yet, so this derives what it honestly can from the public
+           marketplace rows every signed-in user can already read: how much this
+           seller has listed, and how much of it is actually verified. */
+        function sellerSignals(sellerId) {
+            if (!sellerId) return null;
+            const theirs = marketListings.filter(l => l.sellerId === sellerId);
+            if (!theirs.length) return null;
+            const verified = theirs.filter(l => l.blueTickVerified).length;
+            const withPhotos = theirs.filter(l => animalCoverPhoto(l)).length;
+            const avgTrust = Math.round(theirs.reduce((s, l) => s + (l.trustScore || 0), 0) / theirs.length);
+            return { count: theirs.length, verified, withPhotos, avgTrust };
+        }
+
+        // Seller card for a listing detail. Deliberately states what the numbers are
+        // based on — an inflated "trusted seller" badge on data this thin would be
+        // worse than nothing on a marketplace whose premise is stolen livestock.
+        function sellerCardHtml(a) {
+            const s = sellerSignals(a.sellerId);
+            const name = a.owner || 'Seller';
+            const mine = a.sellerId && a.sellerId === currentUser.id;
+            return `
+      <div class="section-label"><h3>About the seller</h3></div>
+      <div class="card" style="padding:13px 15px;">
+        <div style="display:flex;align-items:center;gap:11px;">
+          <div class="conv-avatar" style="width:40px;height:40px;border-radius:11px;">${I('<circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.5-4 5-5.5 7.5-5.5S18 16 19.5 20"/>', 18)}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13.5px;font-weight:700;">${esc(name)}${mine ? ' (you)' : ''}</div>
+            <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px;">${s
+                ? `${s.count} listing${s.count > 1 ? 's' : ''} on the market · ${s.verified} verified · avg trust ${s.avgTrust}/100`
+                : 'No other listings from this seller'}</div>
+          </div>
+        </div>
+        ${s && s.count > 1 && !mine ? `<button class="btn btn-ghost" style="margin-top:10px;padding:9px;" onclick="viewSellerListings('${jsAttr(a.sellerId)}','${jsAttr(name)}')">See their other listings</button>` : ''}
+        <div style="font-size:11px;color:var(--ink-faint);margin-top:9px;line-height:1.5;">Based on this seller's live listings only — NG Safeguard does not yet score sellers themselves. Always verify the animal's NFC tag and papers in person before paying.</div>
+      </div>`;
+        }
+
+        // Filter the marketplace down to one seller.
+        function viewSellerListings(sellerId, name) {
+            marketSellerFilter = { id: sellerId, name: name || 'this seller' };
+            go('marketplace');
+            renderMarketplace();
+        }
+        window.viewSellerListings = viewSellerListings;
+
+        function clearSellerFilter() {
+            marketSellerFilter = null;
+            renderMarketplace();
+        }
+        window.clearSellerFilter = clearSellerFilter;
 
         // A listing photo that can't load (deleted from storage, stale URL, offline) must
         // leave the species-icon card behind, not a blank strip.
@@ -18465,6 +18798,7 @@ var capacitorLocalNotifications = (function (exports, core) {
           </div>
         </div>`;
             }).join('')}`;
+            i18nRepaint(wrap);
         }
         window.renderMyListings = renderMyListings;
 
@@ -18489,13 +18823,47 @@ var capacitorLocalNotifications = (function (exports, core) {
             // Prefer public listings (all sellers); fall back to local own animals.
             const source = (marketListings.length ? marketListings : animals.filter(a => a.forSale));
             const query = document.getElementById('market-search')?.value.trim() || '';
-            const filtered = source.filter(a => marketFilter === 'all' || a.species === marketFilter);
+            const priceMin = parseInt(document.getElementById('market-price-min')?.value, 10);
+            const priceMax = parseInt(document.getElementById('market-price-max')?.value, 10);
+            const saved = watchlist();
+            const filtered = source.filter(a => {
+                if (marketFilter !== 'all' && a.species !== marketFilter) return false;
+                if (marketSellerFilter && a.sellerId !== marketSellerFilter.id) return false;
+                if (marketSavedOnly && !saved.includes(a.id)) return false;
+                const p = Number(a.salePrice) || 0;
+                if (!isNaN(priceMin) && p < priceMin) return false;
+                if (!isNaN(priceMax) && priceMax > 0 && p > priceMax) return false;
+                return true;
+            });
             const userLoc = await getUserLocation();
-            const listings = rankResults(filtered, query, [
+            let listings = rankResults(filtered, query, [
                 { key: 'name', weight: 3 }, { key: 'breed', weight: 2 }, { key: 'species', weight: 1 }
             ], userLoc);
+            // 'nearest' keeps rankResults' relevance+distance order; the others override it.
+            if (marketSort === 'newest') {
+                listings = [...listings].sort((x, y) => new Date(y.listedAt || 0) - new Date(x.listedAt || 0));
+            } else if (marketSort === 'price_low') {
+                listings = [...listings].sort((x, y) => (Number(x.salePrice) || 0) - (Number(y.salePrice) || 0));
+            } else if (marketSort === 'price_high') {
+                listings = [...listings].sort((x, y) => (Number(y.salePrice) || 0) - (Number(x.salePrice) || 0));
+            }
+            renderMarketNotice(source, listings.length);
+            const sortEl = document.getElementById('market-sort');
+            if (sortEl && sortEl.value !== marketSort) sortEl.value = marketSort;
+            const savedBtn = document.getElementById('market-saved-toggle');
+            if (savedBtn) {
+                savedBtn.style.borderColor = marketSavedOnly ? 'var(--verify)' : 'var(--line)';
+                savedBtn.style.color = marketSavedOnly ? 'var(--verify)' : 'var(--ink-soft)';
+                savedBtn.textContent = `♥ Saved${saved.length ? ` (${saved.length})` : ''}`;
+            }
             if (!listings.length) {
-                ml.innerHTML = `<div class="empty"><div class="ei">${I('<path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>', 40)}</div><div class="et">${query ? 'No matches' : 'No listings yet'}</div><div class="es">${query ? 'Try a different search.' : 'Animals listed for sale will appear here.'}</div></div>`;
+                const why = marketSavedOnly ? 'Nothing saved yet'
+                    : marketSellerFilter ? `No listings from ${esc(marketSellerFilter.name)}`
+                        : query ? 'No matches' : 'No listings yet';
+                const hint = marketSavedOnly ? 'Tap ♥ on a listing to keep it here.'
+                    : (!isNaN(priceMin) || !isNaN(priceMax)) ? 'Try widening the price range.'
+                        : query ? 'Try a different search.' : 'Animals listed for sale will appear here.';
+                ml.innerHTML = `<div class="empty"><div class="ei">${I('<path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/>', 40)}</div><div class="et">${why}</div><div class="es">${hint}</div></div>`;
                 return;
             }
             ml.innerHTML = listings.map(a => {
@@ -18511,13 +18879,22 @@ var capacitorLocalNotifications = (function (exports, core) {
         <div class="mname">${esc(a.name)}${a.blueTickVerified ? ` ${blueTick(13)}` : ''}</div>
         <div class="mbreed">${esc(a.breed)} · ${esc(a.gender)} · ${calcAge(a.dob)}</div>
         <div class="mprice">R ${(a.salePrice || 0).toLocaleString()}</div>
-        ${dist ? `<div style="margin:2px 0 4px;"><span class="distance-badge">📍 ${dist}</span></div>` : ''}
-        <div class="mfooter"><span style="font-size:12px;color:var(--ink-faint);">${mine ? 'You' : esc(a.owner)} · Trust ${score}/100</span>${mine
+        <div style="margin:2px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          ${dist ? `<span class="distance-badge">📍 ${dist}</span>` : ''}
+          ${listedAgo(a.listedAt) ? `<span style="font-size:11px;color:var(--ink-faint);">${listedAgo(a.listedAt)}</span>` : ''}
+        </div>
+        <div class="mfooter"><span style="font-size:12px;color:var(--ink-faint);">${mine ? 'You' : esc(a.owner)} · Trust ${score}/100</span>
+          <div style="display:flex;gap:7px;align-items:center;">
+          ${mine ? '' : `<button title="Save this listing" style="background:var(--paper);border:1px solid ${isSaved(a.id) ? 'var(--verify)' : 'var(--line)'};color:${isSaved(a.id) ? 'var(--verify)' : 'var(--ink-faint)'};border-radius:9px;padding:7px 10px;font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation();toggleSaved('${jsAttr(a.id)}')">${isSaved(a.id) ? '♥' : '♡'}</button>`}
+          ${mine
                     ? `<button style="background:var(--paper);color:var(--ink-soft);border:1px solid var(--line);border-radius:9px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation();openListingEnquiries('${jsAttr(a.id)}')">${enq ? `${enq} enquir${enq === 1 ? 'y' : 'ies'}` : 'No enquiries'}</button>`
-                    : `<button style="background:var(--verify);color:#fff;border:none;border-radius:9px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation();enquireAnimal('${jsAttr(a.id)}')">Enquire</button>`}</div>
+                    : `<button style="background:var(--verify);color:#fff;border:none;border-radius:9px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;" onclick="event.stopPropagation();enquireAnimal('${jsAttr(a.id)}')">Enquire</button>`}
+          </div></div>
       </div>
     </div>`;
             }).join('');
+            i18nRepaint(ml);
+            i18nRepaint(document.getElementById('market-notice'));
             setTimeout(() => {
                 document.querySelectorAll('#market-filter-chips .chip').forEach(c => {
                     c.classList.toggle('on', c.textContent.toLowerCase().replace('all species', 'all') === marketFilter);
@@ -18525,6 +18902,43 @@ var capacitorLocalNotifications = (function (exports, core) {
             }, 50);
         }
         window.renderMarketplace = renderMarketplace;
+
+        // The bar above the results: an active seller filter, and how many listings are
+        // new since this device last looked (a real server-side saved-search alert needs
+        // a table, so this is the honest device-local version).
+        function renderMarketNotice(source, shownCount) {
+            const box = document.getElementById('market-notice');
+            if (!box) return;
+            const bits = [];
+            if (marketSellerFilter) {
+                bits.push(`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;background:var(--verify-tint);border-radius:12px;margin-bottom:10px;">
+            <div style="font-size:12px;color:var(--ink-soft);">Listings by <b>${esc(marketSellerFilter.name)}</b> · ${shownCount}</div>
+            <span class="link" style="font-size:12px;" onclick="clearSellerFilter()">Show all</span>
+          </div>`);
+            }
+            const seen = loadJsonList(MARKET_SEEN_KEY);
+            if (seen.length) {
+                const fresh = (source || []).filter(a => !seen.includes(a.id) && a.sellerId !== currentUser.id).length;
+                if (fresh > 0) {
+                    bits.push(`<div style="padding:10px 13px;background:var(--signal-tint);border-radius:12px;margin-bottom:10px;font-size:12.5px;font-weight:600;color:#8A5A12;">${fresh} new listing${fresh > 1 ? 's' : ''} since you last looked</div>`);
+                }
+            }
+            box.innerHTML = bits.join('');
+            // Remember what's on the market now, so "new" means new next time.
+            try { localStorage.setItem(MARKET_SEEN_KEY, JSON.stringify((source || []).map(a => a.id).slice(-400))); } catch (e) { }
+        }
+
+        function setMarketSort(v) {
+            marketSort = v || 'nearest';
+            renderMarketplace();
+        }
+        window.setMarketSort = setMarketSort;
+
+        function toggleSavedOnly() {
+            marketSavedOnly = !marketSavedOnly;
+            renderMarketplace();
+        }
+        window.toggleSavedOnly = toggleSavedOnly;
 
         function setMarketFilter(k, el) {
             marketFilter = k;
@@ -18562,6 +18976,7 @@ var capacitorLocalNotifications = (function (exports, core) {
     <div style="margin:10px 0 4px;display:flex;align-items:center;gap:8px;">${a.blueTickVerified ? `${blueTick(18)}<span style="font-size:13.5px;font-weight:700;">Verified listing</span>` : `<span style="font-size:12px;color:var(--ink-faint);">Not yet verified</span>`}</div>
     ${photoStripHtml(a)}
     ${a.saleNotes ? `<div class="card" style="padding:13px 15px;margin:12px 0 4px;"><div style="font-size:13.5px;font-weight:600;margin-bottom:6px;">Seller notes</div><div style="font-size:13px;color:var(--ink-soft);line-height:1.6;">${esc(a.saleNotes)}</div></div>` : ''}
+    ${sellerCardHtml(a)}
     <div class="section-label"><h3>Verification summary</h3></div>
     <div class="card" style="padding:4px 15px;">
       <div class="info-row"><div class="k">NFC verified</div><div class="v">${earned.nfc ? '✓ Yes' : '✗ No'}</div></div>
@@ -19798,7 +20213,9 @@ var capacitorLocalNotifications = (function (exports, core) {
         window.notifyOwnerOfScanLocation = notifyOwnerOfScanLocation;
 
         function showFoundResultUnknown(payload) {
-            const s = document.getElementById('found-result-scroll') || document.getElementById('guest-listing-detail-scroll');
+            // (There is no #found-result-scroll element — the found-tag result renders
+            // into the guest listing detail scroller.)
+            const s = document.getElementById('guest-listing-detail-scroll');
             const scroll = document.getElementById('animal-scroll');
             go('foundportal');
             toast('Tag scanned but animal not found in system. Please fill in the form below.');
@@ -20516,6 +20933,13 @@ var capacitorLocalNotifications = (function (exports, core) {
             currentUser = { ...currentUser, ...session };
             isGuest = false;
 
+            // Leave the boot screen the moment the session is known. This used to wait
+            // for loadAllData() (several native storage reads) first, which is why the
+            // sign-in screen sat on show for a beat on every launch. Home paints from
+            // whatever is already in memory and is repainted below once the cache loads.
+            seedVetData();
+            go('home');
+
             // Show cached data immediately so the first paint is never empty while the
             // network load runs. loadAllData restores the currentUser cache too, so
             // re-apply the live session fields (tokens/id) right after so a stale cache
@@ -20523,10 +20947,8 @@ var capacitorLocalNotifications = (function (exports, core) {
             try {
                 await loadAllData();
                 currentUser = { ...currentUser, ...session };
+                refreshCurrentScreen();
             } catch (e) { console.warn('Local cache load failed:', e); }
-
-            seedVetData();
-            go('home');
 
             // Background hydration — fire and forget, but re-render the visible screen
             // when it finishes so a cold start always ends on fresh data instead of the
@@ -20596,6 +21018,9 @@ var capacitorLocalNotifications = (function (exports, core) {
                 // the load returns almost instantly.
                 setTimeout(hideRefreshBar, 350);
                 try { updateBadges(); } catch (e) { }
+                // Anything that arrived while the app was away gets raised now (the very
+                // first pass after a launch only seeds, so it never spams on start-up).
+                announceNewNotifications().catch(() => { });
                 refreshCurrentScreen();
             }
         }
@@ -20884,6 +21309,17 @@ var capacitorLocalNotifications = (function (exports, core) {
            ONBOARDING ROLE SELECT
            ============================================================== */
         document.addEventListener('DOMContentLoaded', async () => {
+            // Safety net: the boot screen is a waiting room, never a destination. If
+            // anything below wedges before the session decision, fall through to sign-in
+            // rather than leaving the user staring at a logo.
+            const bootFallback = setTimeout(() => {
+                const boot = document.getElementById('screen-boot');
+                if (boot && !boot.classList.contains('hidden')) {
+                    console.warn('Boot stalled — falling back to the sign-in screen');
+                    go('auth');
+                }
+            }, 6000);
+
             try {
                 await Capacitor.Plugins.SplashScreen.hide();
             } catch (e) { }
@@ -20914,6 +21350,7 @@ var capacitorLocalNotifications = (function (exports, core) {
 
 
             const hasSession = await checkStoredSession();
+            clearTimeout(bootFallback);
             if (!hasSession) {
                 const rg = document.getElementById('onboard-role-grid');
                 if (rg) {
@@ -20963,6 +21400,16 @@ var capacitorLocalNotifications = (function (exports, core) {
                     }
                 });
             } catch (e) { console.warn('appStateChange listener:', e); }
+
+            // Poll for new messages/alerts while the app is in the foreground, and let a
+            // tapped notification land on the screen it is about.
+            startAlertPolling();
+            try {
+                Capacitor.Plugins.LocalNotifications?.addListener?.('localNotificationActionPerformed', ({ notification }) => {
+                    const screen = notification?.extra?.screen;
+                    if (screen && currentUser.id && !isGuest) go(screen);
+                });
+            } catch (e) { console.warn('notification tap listener:', e); }
 
             // OTA: check shortly after startup (don't compete with first paint)
             // and then every 30 minutes. Staged updates apply on the next
